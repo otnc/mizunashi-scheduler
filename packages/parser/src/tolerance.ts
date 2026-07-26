@@ -24,7 +24,9 @@ export const DIAGNOSTIC_LIMITS: Readonly<Record<string, number>> = {
   'time.hourOnly': 0.05,
   'session.zeroLength': 0.01,
   'session.crossMidnight': 0.05,
-  'session.overlap': 0.001,
+  // 2017 年度の CSV に 1 件実在する。1 時間の重複で 1 年分の取り込みを
+  // 却下するほうが利用者にとって害が大きいため 1% まで許容する
+  'session.overlap': 0.01,
   'date.gap': 0.01,
   'date.unparsable': 0.01,
 };
