@@ -8,6 +8,7 @@ import {
   type ScheduleData,
 } from '../../lib/schedule';
 import { dayTotalLabel, formatDate, formatDuration, headline } from '../../lib/format';
+import { DayDetailPopover } from './DayDetailPopover';
 import { DayTimeline } from './DayTimeline';
 import { SessionList } from './SessionList';
 
@@ -197,6 +198,7 @@ function TodayTomorrow({
 
 function WeekView({ data, from, now }: { data: ScheduleData; from: string; now: Date }) {
   const [anchor, setAnchor] = useState(from);
+  const [openDate, setOpenDate] = useState<string | null>(null);
   const days = daysBetween(data, anchor, 7);
   const shift = (delta: number): void => {
     setAnchor(
@@ -229,10 +231,23 @@ function WeekView({ data, from, now }: { data: ScheduleData; from: string; now: 
       </div>
       <ul className="space-y-2">
         {days.map((day) => (
-          <li key={day.date} className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-3">
-            <span className="text-sm tabular-nums">{formatDate(day.date)}</span>
-            <DayTimeline day={day} nowMinutes={nowMinutesFor(day.date, from, now)} />
-            <span className="text-xs text-muted-foreground tabular-nums">{dayTotalLabel(day)}</span>
+          <li key={day.date}>
+            <DayDetailPopover
+              day={day}
+              align="left"
+              open={openDate === day.date}
+              onOpenChange={(v) => {
+                setOpenDate(v ? day.date : null);
+              }}
+            >
+              <div className="grid grid-cols-[5.5rem_1fr_auto] items-center gap-3">
+                <span className="text-sm tabular-nums">{formatDate(day.date)}</span>
+                <DayTimeline day={day} nowMinutes={nowMinutesFor(day.date, from, now)} />
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {dayTotalLabel(day)}
+                </span>
+              </div>
+            </DayDetailPopover>
           </li>
         ))}
       </ul>
@@ -248,6 +263,7 @@ function MonthView({ data, today, now }: { data: ScheduleData; today: string; no
     y: Number(today.slice(0, 4)),
     m: Number(today.slice(5, 7)),
   }));
+  const [openDate, setOpenDate] = useState<string | null>(null);
   const first = `${String(ym.y)}-${String(ym.m).padStart(2, '0')}-01`;
   const total = new Date(Date.UTC(ym.y, ym.m, 0)).getUTCDate();
   const days = daysBetween(data, first, total);
@@ -305,11 +321,9 @@ function MonthView({ data, today, now }: { data: ScheduleData; today: string; no
         {Array.from({ length: total }, (_, i) => {
           const date = `${String(ym.y)}-${String(ym.m).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`;
           const day: DaySchedule | undefined = byDate.get(date);
-          return (
-            <div
-              key={date}
-              className={`rounded-md border p-1 ${date === today ? 'border-primary' : 'border-border'}`}
-            >
+          const column = (offset + i) % 7;
+          const cellContent = (
+            <>
               <div className="flex items-baseline justify-between">
                 <span className="text-xs tabular-nums">{i + 1}</span>
                 {day != null && day.sessions.length > 1 && (
@@ -321,6 +335,27 @@ function MonthView({ data, today, now }: { data: ScheduleData; today: string; no
                 <div className="mt-1">
                   <DayTimeline day={day} nowMinutes={nowMinutesFor(date, today, now)} />
                 </div>
+              )}
+            </>
+          );
+          return (
+            <div
+              key={date}
+              className={`rounded-md border p-1 ${date === today ? 'border-primary' : 'border-border'}`}
+            >
+              {day == null ? (
+                cellContent
+              ) : (
+                <DayDetailPopover
+                  day={day}
+                  align={column === 0 ? 'left' : column === 6 ? 'right' : 'center'}
+                  open={openDate === date}
+                  onOpenChange={(v) => {
+                    setOpenDate(v ? date : null);
+                  }}
+                >
+                  {cellContent}
+                </DayDetailPopover>
               )}
             </div>
           );
