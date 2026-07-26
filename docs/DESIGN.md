@@ -987,41 +987,51 @@ export async function prune(env: Env, now: Date): Promise<PruneResult> {
 
 ```mermaid
 flowchart LR
-    A[原本バイト列<br/>+ Content-Type<br/>+ ファイル名] --> B[sniff()<br/>形式判定]
-    B --> C{形式}
+    A[原本バイト列<br/>+ Content-Type<br/>+ ファイル名] --> B[sniff<br/>容器の判定]
+    B --> C{容器}
     C -->|zip + xl/| D[XlsxReader]
     C -->|text| E[CsvReader]
-    C -->|%PDF| F[PdfAdapter<br/>未対応→手動]
-    D --> G[GridAdapter<br/>月シート格子]
-    E --> H[FlatCsvAdapter<br/>1日1行]
-    G --> I[RawDocument]
-    H --> I
-    I --> J[Normalizer<br/>日付解決 / 時刻正規化<br/>異常値の除去と計上]
-    J --> K[NormalizedDocument]
-    K --> L[暦年バケットへ分割]
-    L --> M[YearSchedule × N]
+    C -->|%PDF| F[未対応<br/>手動対応へ]
+    D --> T[Table 群<br/>容器非依存の共通表]
+    E --> T
+    T --> L1[locate<br/>ヘッダ探索 / 形状推論<br/>列役割 + 行ブロック高]
+    L1 --> X[extract<br/>RawEntry 群]
+    X --> N[normalize<br/>年の解決 / 時刻正規化<br/>異常値の除去と計上]
+    N --> K[NormalizedDocument]
+    K --> S[暦年バケットへ分割]
+    S --> M[YearSchedule × N]
 ```
+
+**容器の判定（`sniff`）と構造の推論（`locate`）を分けることが要点。** 前者はバイト列の先頭を見るだけの単純な判定、後者は中身の意味を読む推論であり、変わる理由が異なる。分けておけば、形式が増えても構造が変わっても、影響が片側に閉じる。
 
 ```
 packages/parser/
 ├── src/
 │   ├── index.ts              parseDocument() — 唯一の公開 API
-│   ├── sniff.ts              形式判定
-│   ├── readers/
-│   │   ├── xlsx.ts           OOXML → Workbook（fflate + fast-xml-parser）
-│   │   └── csv.ts            RFC 4180 + Shift_JIS 対応 → Table
-│   ├── adapters/
-│   │   ├── types.ts          SourceAdapter インターフェース
-│   │   ├── grid-monthly.ts   2020〜2026 系（月ごとシート・2行1日の格子）
-│   │   ├── flat-csv.ts       2016〜2017 系（1日1行のフラット CSV）
-│   │   └── registry.ts       アダプタ登録・スコアリング
+│   ├── vocabulary.ts         表記ゆれの語彙（データ・§8.10.4）
+│   ├── tolerance.ts          閾値の集約（§8.10.6）
+│   ├── readers/              容器 → Table（§8.10.2）
+│   │   ├── types.ts          Reader / Table / Cell
+│   │   ├── xlsx.ts           OOXML（fflate + fast-xml-parser、rPh 除外）
+│   │   ├── csv.ts            RFC 4180 + Shift_JIS / UTF-8 自動判別
+│   │   └── registry.ts       sniff によるスコアリング
+│   ├── locate/               Table → 構造（§8.10.3）
+│   │   ├── header.ts         ヘッダ行の発見と列役割の割り当て
+│   │   ├── shape.ts          ヘッダが無いときの形状推論
+│   │   └── blocks.ts         行ブロック高の推論（1日 = 何行か）
+│   ├── recognize/            値の認識器（§8.10.5）
+│   │   ├── time.ts           isTimeLike / toMinutes
+│   │   ├── date.ts           isDateLike / serial / 和暦
+│   │   └── weekday.ts        isWeekdayLike
+│   ├── extract.ts            構造 + Table → RawEntry[]
 │   ├── normalize/
-│   │   ├── time.ts           4 種の時刻表現 + 入力ミスに対応
-│   │   ├── date.ts           年月日の解決 + 曜日による交差検証
+│   │   ├── year.ts           年の解決 + 曜日交差検証（§8.4）
 │   │   ├── text.ts           NFKC / ルビ除去 / 全角空白
 │   │   └── document.ts       RawDocument → NormalizedDocument
 │   └── diagnostics.ts        警告・異常値の収集
 ```
+
+> **アダプタは `readers` と `locate` の組み合わせに解体した。** 当初は「格子形式アダプタ」「フラット CSV アダプタ」という単位で分けていたが、構造推論（[§8.10.3](#8103-構造推論locate)）を入れたことで両者の違いが「行ブロック高が 2 か 1 か」だけになり、別実装として持つ理由がなくなった。**容器（Reader）と構造（locate）が直交するため、組み合わせの数だけアダプタを書く必要がない。**
 
 ### 8.2 アダプタのインターフェース
 
@@ -1276,25 +1286,233 @@ export interface Diagnostics {
 | 9 | **CSV の文字コード** | BOM を確認し、無ければ **Shift_JIS (CP932) を既定**とする。UTF-8 として妥当かを先に判定し、妥当なら UTF-8。`TextDecoder('shift_jis')` は Workers でも利用可能 |
 | 10 | **CSV のセル内改行** | RFC 4180 の引用フィールド内改行を正しく扱う（日英併記が 1 セル 2 行）。素朴な `split('\n')` は使わない |
 
-### 8.10 設計方針のまとめ
+### 8.10 将来のフォーマット変動への耐性
 
-**壊れやすい仮定を 1 つずつ潰す。** [§4.4](#44-過去ファイルの調査internet-archive) で実証された変動軸に、それぞれ対策を割り当てている。
+[§4.4](#44-過去ファイルの調査internet-archive) の 12 年分の調査で、このデータソースは**ほぼ毎年どこかが変わる**ことが分かっている。したがって「今のフォーマットを読む」だけでは不足で、**まだ見ていない変化をコード改変なしに吸収できる幅**を最初から持たせる。
 
-| 変動軸（実証済み） | 対策 |
+#### 8.10.1 設計原則
+
+| 原則 | やること | やらないこと |
+| --- | --- | --- |
+| **1. 位置ではなく意味で探す** | ヘッダ行の語句から列の役割を決める | 「開始時刻は F 列」と決め打つ |
+| **2. 型ではなく値の形で判定する** | 「このセルは時刻に見えるか」を問う | 「この列は時刻型のはず」と仮定する |
+| **3. 単一の情報源に依存しない** | 年・月・日を複数のソースから推定し、曜日で突き合わせる | シリアル値だけを信じる |
+| **4. 語彙はデータ、分岐はコードにしない** | 表記ゆれを配列に列挙し、追加は 1 行の編集で済ませる | `if (name === '備考')` を書き足していく |
+| **5. 容器と構造を分離する** | どの形式も共通の表構造に変換してから解析する | xlsx 用と csv 用で解析ロジックを二重に持つ |
+| **6. 未知を無視できるようにする** | 知らない列・行は捨てて先に進む | 想定外の列があったら失敗する |
+| **7. 部分的な失敗を全体の失敗にしない** | 1 セルの異常は該当セッションだけ捨てて計上する | 1 箇所で例外を投げてファイル全体を落とす |
+
+#### 8.10.2 容器と構造の分離
+
+**すべての入力を、まず共通の表構造 `Table` に変換する。** 以降の解析は「元が xlsx だったか csv だったか」を一切知らない。
+
+```ts
+export interface Cell {
+  readonly raw: string;          // 正規化前の生の値
+  readonly text: string;         // NFKC 正規化 + ルビ除去 + トリム済み
+  readonly numeric: number | null;  // 数値として解釈できる場合
+}
+
+export interface Table {
+  readonly name: string;         // シート名 / ファイル名
+  readonly rows: readonly (readonly Cell[])[];
+}
+
+export interface Reader {
+  readonly id: string;
+  sniff(artifact: SourceArtifact): number;      // 0..1
+  read(artifact: SourceArtifact): Table[];      // 1 ファイル → 複数の表
+}
+```
+
+この分離により、**新しい容器形式（`.xls` / `.ods` / HTML の表など）が来ても Reader を 1 つ足すだけ**で、構造推論・正規化・組み立ての全段が変更なしに動く。逆に構造が変わっても Reader は無傷でいられる。
+
+#### 8.10.3 構造推論（`locate`）
+
+列位置も行構成も決め打たない。以下の順で**表から構造を推論する**。
+
+**(1) ヘッダ行の発見**
+
+各行について語彙辞書とのマッチ数を数え、最大の行をヘッダとみなす。複数行にまたがるヘッダ（日本語行 + 英語行）は連結して評価する。
+
+```ts
+function findHeader(table: Table): HeaderInfo | null {
+  const scored = table.rows.map((row, i) => ({ i, score: vocabularyMatchCount(row) }));
+  const best = scored.sort((a, b) => b.score - a.score)[0];
+  return best && best.score >= 2 ? buildHeaderInfo(table, best.i) : null;
+}
+```
+
+**(2) 列の役割割り当て**
+
+ヘッダの語句から各列に役割を与える。`session` は**序数付き**で取るため、回数が何回あっても同じコードで扱える。
+
+```ts
+type ColumnRole =
+  | { kind: 'date' }
+  | { kind: 'weekday' }
+  | { kind: 'sessionStart'; ordinal: number }
+  | { kind: 'sessionEnd';   ordinal: number }
+  | { kind: 'separator';    ordinal: number }
+  | { kind: 'note'; label: string }      // 備考 / 祝日 / 未知の見出し すべてここ
+  | { kind: 'unknown' };
+```
+
+`1回目` / `1st` / `１回目` のような見出しは**列の範囲（マージ幅）を持つ**ため、その範囲内の列を「時刻らしい値の並び」で開始・区切り・終了に割り付ける。区切り列は無くてもよい。
+
+**(3) ヘッダが見つからないときの形状推論**
+
+ヘッダの語彙が総入れ替えされた場合に備え、**値の形だけから構造を推定する経路**を用意する。
+
+```ts
+// 各列について「時刻に見える値の割合」を計算し、閾値を超えた列を時刻列とみなす。
+// 隣接する時刻列を左から順にペアにして (start, end) を作る。
+function inferByShape(table: Table): ColumnRole[] {
+  const timeRatio = table.columns.map(col => ratio(col, isTimeLike));
+  const timeCols  = timeRatio.map((r, i) => r >= 0.5 ? i : -1).filter(i => i >= 0);
+  return pairAdjacent(timeCols);          // [F,I], [K,N], [P,S] 相当が自動で出る
+}
+```
+
+日付列も同様に「日付に見える値の割合」で見つける。**ヘッダ推論が成功すればそちらを優先し、失敗したら形状推論に落ちる。** 両方失敗して初めてパース失敗とする。
+
+**(4) 行ブロックの推論**
+
+現行の xlsx は「1 日 = 2 行」、CSV は「1 日 = 1 行」である。これも決め打たず、**日付らしいセルの出現間隔**から求める。
+
+```ts
+// 日付列に値が入っている行番号の差分の最頻値をブロック高とする
+const stride = mode(diff(rowsWithDate));   // 2 なら格子形式、1 ならフラット形式
+```
+
+これにより「格子形式アダプタ」と「フラット CSV アダプタ」の違いが実質的になくなる。将来 1 日 3 行になっても追随する。
+
+#### 8.10.4 語彙はデータとして持つ
+
+表記ゆれの吸収は**コードの分岐ではなく配列への追記**で行う。`packages/parser/src/vocabulary.ts` に集約する。
+
+```ts
+export const VOCAB = {
+  date:    ['日付', '日 付', 'date'],
+  weekday: ['曜日', 'day', 'week'],
+  note:    ['備考', 'note', '祝日', 'national holidays', 'holiday', 'remarks'],
+
+  // 「N回目」「Nst/nd/rd/th」から序数を取り出す
+  sessionOrdinal: [
+    /(\d+)\s*回目/,
+    /^(\d+)\s*(?:st|nd|rd|th)$/i,
+    /^(?:first|second|third|fourth)$/i,
+  ],
+
+  // 開始と終了の区切り。無くても動くが、あればヒントとして使う
+  separator: ['～', '〜', '~', '-', '–', '—', 'から', 'to'],
+
+  // 時刻の区切り記号。';' は 2022 年版に実在する誤入力
+  timeDelimiter: [':', '：', ';', '；', '.', '時'],
+
+  weekdayJa: ['日', '月', '火', '水', '木', '金', '土'],
+  weekdayEn: ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'],
+
+  // 元号 → 西暦のオフセット（令和1年 = 2019）
+  eras: [
+    { names: ['令和', 'R', 'r'], offset: 2018 },
+    { names: ['平成', 'H', 'h'], offset: 1988 },
+  ],
+
+  // 注意書きの検出。本文そのものは原本から取る
+  noticeMarkers: ['※', '*', '注意', 'please', 'caution'],
+} as const;
+```
+
+**新しい表記が出てきたら、配列に 1 要素足すだけで対応できる。** テストもフィクスチャを 1 件足すだけで済む。
+
+#### 8.10.5 値の認識器
+
+「この値は何に見えるか」を判定する小さな関数群を用意し、構造推論と正規化の両方から使う。
+
+```ts
+export function isTimeLike(c: Cell): boolean;      // 1700 / 0.375 / 9:00 / 19;00 / １７時
+export function isDateLike(c: Cell): boolean;      // 46023 / 4月1日 / 2026-01-05 / APR.1
+export function isWeekdayLike(c: Cell): boolean;   // 月 / MON / Monday
+export function isSeparatorLike(c: Cell): boolean; // ～ / 〜 / - / から
+```
+
+**時刻は分単位（`Minutes`）で保持する。** 現行データは毎正時のみだが、Excel 時刻小数はもともと分を表現できるため、30 分刻みや 15 分刻みになっても実装変更なしに通る。
+
+#### 8.10.6 許容度は 1 箇所にまとめる
+
+閾値をコードに散らさず、設定オブジェクトに集約する。フォーマットが変わって調整が必要になったとき、探す場所が 1 つで済む。
+
+```ts
+export const TOLERANCE = {
+  headerMinMatches: 2,          // ヘッダ行と判定する最小マッチ数
+  timeColumnRatio: 0.5,         // 形状推論で時刻列とみなす閾値
+  weekdayAgreement: 0.95,       // 年の交差検証で要求する曜日一致率
+  maxSessionsPerDay: 8,         // これを超えたら構造推論の誤りとみなす
+  diagnostics: {                // 日数に対する比率の上限（§8.7）
+    'time.separator': 0.01,
+    'time.unparsable': 0.01,
+    'session.zeroLength': 0.01,
+    'session.crossMidnight': 0.05,
+    'date.gap': 0.01,
+  },
+} as const;
+```
+
+#### 8.10.7 何を吸収でき、何を吸収できないか
+
+**楽観的に書かない。** 吸収できない変化を明示しておくことが、障害時に「設計の想定内か外か」を即断するために要る。
+
+**コード改変なしに吸収できる（想定内）**
+
+| 変化 | 吸収する仕組み |
 | --- | --- |
-| ファイル名の命名規則 | 公式ページ HTML の走査で発見。名前から年を推定しない |
-| ファイル形式（PDF / CSV / XLSX） | `sniff()` + アダプタ選択 |
-| レイアウト（格子 / フラット） | アダプタで分離 |
-| 列位置・列の意味（備考 ↔ 祝日） | ヘッダ行から列を発見。意味は列名で判断 |
-| セッション数（1〜3回、将来 4回?） | ヘッダから可変個数で検出 |
-| 時刻表現（整数 / 小数 / 文字列 / 誤入力） | `normalizeTime()` で 4 種 + 誤記に対応 |
-| 対象期間（通年 / 4〜12月 / 会計年度） | `coverage` を実データから算出し、暦年バケットへ分割 |
-| シリアル値の破損 | 曜日による交差検証で年を補正 |
-| 全角・半角の混在 | NFKC 正規化 |
-| ルビ（`<rPh>`） | XML レベルで除外 |
-| 単発のデータ品質異常 | 破棄 + Diagnostics に計上、閾値超過でゲート却下 |
+| 列位置が左右にずれる | ヘッダからの役割割り当て（8.10.3） |
+| セッションが 4 回目・5 回目まで増える | 序数付きの役割 + `maxSessionsPerDay` |
+| 時刻が 30 分・15 分刻みになる | 分単位保持（8.10.5） |
+| 時刻が 23:00 や 24:00 を超える | 分単位 + 日跨ぎ処理（8.5） |
+| 時刻表現が別形式に変わる | 認識器 + `timeDelimiter` 語彙 |
+| 見出しが `備考` → `祝日` → 別の語に変わる | `note` 役割は**見出し文字列ごと保持**する |
+| 区切りが `～` から `から` / `to` になる | `separator` 語彙 |
+| シート名が `令和9年1月` になる | 元号テーブル + NFKC |
+| シート数が 12 以外になる | シートを列挙して処理（8.3） |
+| 対象期間が会計年度・部分年になる | 暦年バケット分割（8.6） |
+| 1 日あたりの行数が 2 → 1 → 3 に変わる | 行ブロック推論（8.10.3） |
+| 日付シリアル値が壊れている | 曜日交差検証（8.4） |
+| 未知の列が増える | `unknown` として無視 |
+| 全角・半角・ルビの混在 | 正規化（8.9） |
+| 単発の入力ミス | Diagnostics に計上して該当分だけ破棄 |
 
-**それでも駄目なら安全に止まる**: バリデーションゲート（[§7.7](#77-検証バリデーションゲート)）が既存の正しいデータを守り、アラートが人間を呼ぶ。**「読めないこと」は許容するが、「間違って読むこと」は許容しない。**
+**コード追加が必要（想定外・要アダプタ / Reader 追加）**
+
+| 変化 | 必要な作業 |
+| --- | --- |
+| `.ods` / `.xls` / HTML 表で公開される | Reader を 1 つ追加（構造推論以降は不変） |
+| PDF のみになる | PDF Reader の追加（[ADR-018](#付録b-adr設計上の意思決定記録) で現状は非対応） |
+| 1 セッション 1 行の縦持ちレイアウトになる | 新しい `locate` 戦略の追加 |
+| 月ごとではなく日ごとのファイルに分割される | `discover` と組み立ての変更 |
+| 時間表の意味が変わる（例: 潮位そのものの掲載） | 設計レベルの見直し |
+
+**いずれの場合も、壊れたことは必ず検知される。** 構造推論に失敗すれば `UnknownFormatError`、推論できてもデータが不正ならバリデーションゲート（[§7.7](#77-検証バリデーションゲート)）が既存データを守り、Critical アラートが飛ぶ（[§15.2](#152-アラート)）。**「読めないこと」は許容するが、「間違って読むこと」は許容しない。**
+
+#### 8.10.8 耐性のテスト
+
+実データ 6 件のゴールデンテストに加えて、**合成フィクスチャで「まだ見ていない変化」を先回りして検証する**（[§16.2](#162-フォーマット変動に対するゴールデンテスト)）。2026 年版を土台に機械的に変形して生成する。
+
+| 合成フィクスチャ | 検証する耐性 |
+| --- | --- |
+| `shifted-columns.xlsx` | 全列を 2 つ右にずらす |
+| `four-sessions.xlsx` | 4 回目の列を追加 |
+| `half-hour.xlsx` | 時刻を 30 分刻みに変更 |
+| `late-night.xlsx` | 23:30〜25:00 の日跨ぎセッション |
+| `reiwa-sheets.xlsx` | シート名を `令和9年1月` 形式に変更 |
+| `alt-separator.xlsx` | 区切りを `から` に変更 |
+| `renamed-note.xlsx` | `祝日` 見出しを別語に変更 |
+| `no-header.xlsx` | ヘッダ行を削除（形状推論の経路を通す） |
+| `single-row-day.csv` | 1 日 1 行のフラット形式 |
+| `utf8.csv` | CSV を UTF-8 に変更 |
+
+**生成スクリプトをリポジトリに置き、フィクスチャ自体はコミットしない**（実データの派生物であるため）。生成は 2026 年版から行うので、原本が手元にある環境でのみ実行される。
 
 ---
 
@@ -3252,14 +3470,22 @@ describe('format resilience', () => {
     expect(() => parse(randomBytes())).toThrow(UnknownFormatError);
   });
 
-  it('列位置がずれたファイルでもヘッダ検出で追従する', () => {
-    // 合成フィクスチャ: 列を2つ右にずらしたもの
-    expect(parse('synthetic/shifted-columns.xlsx').days).toHaveLength(365);
-  });
+});
 
-  it('4回目の列が現れても取り込める', () => {
-    expect(parse('synthetic/four-sessions.xlsx').maxSessionsPerDay).toBe(4);
-  });
+describe('未見の変化への耐性（合成フィクスチャ・§8.10.8）', () => {
+  // 2026 年版を機械的に変形して生成する。生成物はコミットしない。
+  it.each([
+    ['shifted-columns', (s) => expect(s.days).toHaveLength(365)],
+    ['four-sessions',   (s) => expect(s.maxSessionsPerDay).toBe(4)],
+    ['half-hour',       (s) => expect(s.days[0].sessions[0].start).toMatch(/:30$/)],
+    ['late-night',      (s) => expect(s.days.some(d => d.sessions.some(x => x.crossesMidnight))).toBe(true)],
+    ['reiwa-sheets',    (s) => expect(s.year).toBe(2026)],
+    ['alt-separator',   (s) => expect(countSessions(s)).toBe(572)],
+    ['renamed-note',    (s) => expect(s.days.filter(d => d.holiday)).toHaveLength(18)],
+    ['no-header',       (s) => expect(s.days).toHaveLength(365)],   // 形状推論の経路
+    ['single-row-day',  (s) => expect(s.days).toHaveLength(365)],   // 行ブロック高 1
+    ['utf8-csv',        (s) => expect(s.notes.ja[0]).toContain('波の高い日')],
+  ])('%s を変更なしで読める', (name, assert) => assert(parse(`synthetic/${name}`)));
 });
 
 describe('multi-session', () => {
