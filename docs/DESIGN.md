@@ -127,8 +127,8 @@
 | ID | 要件 | 優先度 |
 | --- | --- | --- |
 | FR-18 | 公式サイトを定期巡回し、翌年度版ファイルの公開を検知して自動取り込みする | Must |
-| FR-19 | 取得済みの**原本ファイル**は削除せず永久保存する。既にあれば取得フェーズをスキップして既存を使う | Must |
-| FR-20 | 取得から 2 週間経過したら、念のため再取得を試みる（差分があれば新リビジョンとして保存） | Must |
+| FR-19 | 取得した**原本ファイル**は削除せず永久保存する。公式サイトから消えた後は、保存したものが唯一残る版になる | Must |
+| FR-20 | 2 週間ごとに無条件で再取得し、そのたびに派生データを作り直す（差分判定を行わない） | Must |
 | FR-21 | **提供する時間表データは常に「今年」と「来年（公開済みの場合）」のみを保持する。**それ以外の年の派生データは自動的に破棄する | Must |
 | FR-22 | **年ごとにファイル形式・レイアウト・命名規則が変わりうることを前提とし、変動に追随できる構造にする**（[§4.4](#44-過去ファイルの調査internet-archive) で 12 年分の実変動を確認済み） | Must |
 | FR-23 | フォーマットを解釈できない場合、既存データを壊さずに停止し、運用者へ通知する | Must |
@@ -140,7 +140,7 @@
 | NFR-01 | API レスポンスタイム (p95) | < 100ms（エッジキャッシュヒット時 < 20ms） |
 | NFR-02 | サイト初期表示 (LCP) | < 1.5s (Fast 3G) |
 | NFR-03 | 可用性 | 99.9%（Cloudflare のSLAに準拠） |
-| NFR-04 | 公式サイトへの負荷 | 1日あたり最大 2 リクエスト（条件付き GET を使用） |
+| NFR-04 | 公式サイトへの負荷 | 通常期は 2 週間に 1 回（月 4〜6 リクエスト）。11〜1 月のみ日次 |
 | NFR-05 | ランニングコスト | Cloudflare Workers Free / Paid ($5/mo) 内に収める |
 | NFR-06 | アクセシビリティ | WCAG 2.1 AA 相当 |
 | NFR-07 | データ保持 | 原本 xlsx は無期限保存（削除禁止）。派生データは今年+来年のみ |
@@ -170,7 +170,7 @@ FR-19（原本は永久保存）と FR-21（今年+来年のみ保持）は**対
 
 **アクティブ年の定義**: `activeYears = [JST における現在の年, その翌年]`。ただし翌年は派生データが存在する場合のみ。
 
-**プルーニングのタイミング**: 日次 Cron の ingest 処理の最後に実行する（[§7.8](#78-プルーニング今年来年のみ保持)）。年が変わった翌日の実行で、前年の派生データが自動的に消える。
+**プルーニングのタイミング**: ingest 処理の最後に毎回実行する（[§7.8](#78-プルーニング今年来年のみ保持)）。年が変わった後の最初の実行で、前年の派生データが自動的に消える。1 月は Cron が日次で走るため、遅くとも 1/1 中に反映される。
 
 ---
 
@@ -201,7 +201,7 @@ FR-19（原本は永久保存）と FR-21（今年+来年のみ保持）は**対
 | URL | `.../file_contents/mizunashi2026.xlsx` |
 | サイズ | 157,084 bytes |
 | `Content-Type` | `application/vnd.openxmlformats-officedocument.spreadsheetml.sheet` |
-| `ETag` | `"6a60513a-2659c"`（Strong ETag。**条件付き GET が使える**） |
+| `ETag` | `"6a60513a-2659c"`（Strong ETag。差分検出に使えるが、本設計では使わない → [§7.3](#73-取得ロジック)） |
 | `Last-Modified` | `Wed, 22 Jul 2026 05:12:26 GMT` |
 
 **年別ファイルの存在確認（重要）**
@@ -489,7 +489,7 @@ graph TB
     end
 
     CRON --> ING
-    ING -->|条件付き GET| HAKODATE
+    ING -->|2週間ごとに取得| HAKODATE
     ING -->|原本を永久保存| R2
     ING -->|派生JSONを書込| R2
     ING -->|ホットキャッシュ更新| KV
@@ -607,11 +607,9 @@ mizunashi-scheduler/
 │       │   └── storage.ts         # Storage / Cache インターフェース
 │       └── test/
 │           └── fixtures/          # 実データ本体は追跡しない（再配布回避）
-│               ├── README.md                 # 取得元と各ファイルの位置づけ
-│               └── CHECKSUMS.txt             # sha256。取得時と CI で照合する
+│               └── README.md                 # 取得元と各ファイルの位置づけ
 ├── scripts/
-│   ├── check-invariants.mjs       # プロジェクト固有の不変条件チェック（§17.5）
-│   └── fetch-fixtures.mjs         # テストフィクスチャの取得と検証（§16.2）
+│   └── check-invariants.mjs       # プロジェクト固有の不変条件チェック（§17.5）
 ├── .github/workflows/
 │   ├── ci.yml                     # lint / format / typecheck / test / invariants
 │   ├── deploy.yml
@@ -648,9 +646,9 @@ mizunashi-scheduler/
 | `lucide-react` | アイコン | |
 | `vitest` + `@cloudflare/vitest-pool-workers` | テスト | Workers ランタイム上でテスト |
 | `wrangler` ^4 | デプロイ | |
-| slint ^9 + 	ypescript-eslint ^8 | Lint | Flat Config。型情報を使う（[§17](#17-コード品質lint--format--型)） |
-| slint-plugin-astro / -jsx-a11y / -react-hooks | Lint | Astro / a11y / React Hooks |
-| slint-config-prettier | 整形系ルールの無効化 | 設定の最後に置く |
+| `eslint` ^9 + `typescript-eslint` ^8 | Lint | Flat Config。型情報を使う（[§17](#17-コード品質lint--format--型)） |
+| `eslint-plugin-astro` / `-jsx-a11y` / `-react-hooks` | Lint | Astro / a11y / React Hooks |
+| `eslint-config-prettier` | 整形系ルールの無効化 | 設定の最後に置く |
 | `prettier` ^3 + `prettier-plugin-astro` | Format | `.md` 以外の全ファイル（唯一のフォーマッタ） |
 | `prettier-plugin-tailwindcss` | クラス順の整列 | `.tsx` / `.astro` を横断して同一ルールで整列 |
 | `lefthook` | Git フック | 単一バイナリ。pre-commit / pre-push |
@@ -665,99 +663,96 @@ mizunashi-scheduler/
 
 ### 7.1 全体フロー
 
+**状態を持たない。** 前回何を取得したか・変わったかを一切覚えず、起動のたびに「公式ページを見て、対象年のファイルを取ってきて、作り直す」だけを行う。
+
 ```mermaid
 flowchart TD
-    START([Cron Trigger 起動]) --> PLAN[plan(): やるべきタスクを決定]
-    PLAN --> LOOP{対象年ごとに}
+    START([Cron Trigger 起動<br/>2週間ごと]) --> DISCOVER[公式ページ HTML を取得<br/>ドキュメントリンクを全抽出]
+    DISCOVER --> LOOP{activeYears<br/>今年 / 来年}
 
-    LOOP --> HAVE{その年の派生データが<br/>既に存在する?}
-    HAVE -->|No| DISCOVER
-    HAVE -->|Yes| FRESH{最終取得から<br/>14日以内?}
-    FRESH -->|Yes| SKIP[スキップ<br/>既存データを使用]
-    FRESH -->|No| DISCOVER
+    LOOP --> FOUND{その年のリンクが<br/>ある?}
+    FOUND -->|No| NOTFOUND[未公開として記録<br/>既存データはそのまま使い続ける]
+    FOUND -->|Yes| DL[無条件にダウンロード]
 
-    DISCOVER[公式ページ HTML を取得<br/>対象 xlsx の URL を発見] --> FOUND{URL 発見?}
-    FOUND -->|No| NOTFOUND[not_published として記録<br/>次回に持ち越し]
-    FOUND -->|Yes| COND[条件付き GET<br/>If-None-Match / If-Modified-Since]
-
-    COND --> C304{304?}
-    C304 -->|Yes| TOUCH[fetchedAt のみ更新<br/>原本は再保存しない]
-    C304 -->|No| DL[ボディ取得 → SHA-256 算出]
-
-    DL --> SAME{既存の sha256 と<br/>同一?}
-    SAME -->|Yes| TOUCH
-    SAME -->|No| STORE[R2 に原本を新規キーで保存<br/>削除・上書きは一切しない]
-
-    STORE --> PARSE[XLSX パース]
+    DL --> STORE[R2 に原本を保存<br/>キーは内容ハッシュ由来<br/>同一内容なら既存キーに一致]
+    STORE --> PARSE[パース]
     PARSE --> VALIDATE{妥当性検証を通過?}
     VALIDATE -->|No| REJECT[原本は保持したまま<br/>派生データは更新せず<br/>アラート発報]
-    VALIDATE -->|Yes| DERIVE[YearSchedule JSON 生成<br/>revision++]
-    DERIVE --> WRITE[R2: derived 書込<br/>KV: ホットキャッシュ更新<br/>index.json 更新]
+    VALIDATE -->|Yes| DERIVE[YearSchedule JSON を生成]
+    DERIVE --> WRITE[R2: derived を上書き<br/>KV: ホットキャッシュ更新<br/>index.json 更新]
     WRITE --> PURGE[CDN キャッシュパージ]
 
-    SKIP --> LOOP
-    TOUCH --> LOOP
     NOTFOUND --> LOOP
     REJECT --> LOOP
     PURGE --> LOOP
-    LOOP -->|完了| PRUNE[prune(): activeYears 以外の<br/>派生データ / KV を削除<br/>★raw は触らない]
+    LOOP -->|完了| PRUNE[prune(): activeYears 以外の<br/>派生データ / KV を削除<br/>raw は触らない]
     PRUNE --> END([終了・実行ログを記録])
 ```
+
+**この設計の効き目**: 派生データを毎回作り直すため、**パーサを修正してデプロイすれば次の実行で自動的に正しいデータへ回復する**。手動での再生成操作を運用手順に組み込まなくてよい。自己修復する。
 
 ### 7.2 Cron スケジュール
 
 ```toml
 # wrangler.toml
 [triggers]
-crons = ["15 17 * * *"]   # UTC 17:15 = JST 翌 02:15（毎日）
+crons = [
+  "15 17 1,15 * *",        # 毎月 1 日と 15 日（JST 翌 02:15）= 約 2 週間ごと
+  "15 17 * 11,12,1 *",     # 11〜1 月は毎日。翌年版の公開を早く拾う
+]
 ```
 
-**毎日起動するが、実際に外部へリクエストするかは `plan()` が判断する。** これにより「頻度の調整」をコード側（テスト可能な場所）に置ける。
+- **通常は 2 週間ごと。** 年 1 回しか更新されないデータなので、これで十分に追随できる。
+- **11 月〜1 月だけ毎日。** 翌年版の公開時期であり、ここだけ検知を早める。12/31 に翌年データが無いと「次いつから入れるか」が答えられなくなるため（[§10.4](#104-境界ケース)）。
+- スケジュールだけで頻度を制御し、**コード側に状態を持たせない**。
 
-### 7.3 `plan()` の判断ロジック
+### 7.3 取得ロジック
+
+`plan()` のような状態判断は行わない。毎回同じことをする。
 
 ```ts
-type IngestTask =
-  | { kind: 'refresh'; year: number; reason: 'stale' | 'missing' }
-  | { kind: 'discover'; year: number };   // 未公開の年を探しに行く
+export async function runIngest(env: Env, now: Date): Promise<IngestResult> {
+  const years = activeYears(now);                    // [今年, 来年]
+  const docs = await discoverDocuments(env.http);    // 公式ページを走査
 
-function plan(now: Date, index: ArchiveIndex): IngestTask[] {
-  const jst = toJst(now);
-  const y = jst.year;
-  const tasks: IngestTask[] = [];
+  const results: YearResult[] = [];
+  for (const year of years) {
+    const doc = pickBestFor(year, docs);             // xlsx > csv > pdf
+    if (!doc) { results.push({ year, status: 'not_published' }); continue; }
 
-  // (1) 当年データ: 無ければ必ず取得。あれば 14 日経過で再取得。
-  const cur = index.years[y];
-  if (!cur) {
-    tasks.push({ kind: 'refresh', year: y, reason: 'missing' });
-  } else if (now.getTime() - Date.parse(cur.fetchedAt) > FRESH_TTL_MS) {
-    tasks.push({ kind: 'refresh', year: y, reason: 'stale' });
-  }
+    // 無条件にダウンロードする。ETag も Last-Modified も見ない。
+    const bytes = await env.http.getBytes(doc.url);
+    const key = await archiveRaw(env, year, doc, bytes);   // 内容ハッシュ由来のキー
 
-  // (2) 翌年データ: 未取得なら探索する。
-  //     公開は例年 12 月頃と想定されるため、10 月〜2 月は毎日、
-  //     それ以外の時期は週 1 回（月曜のみ）に抑える。
-  const next = index.years[y + 1];
-  if (!next) {
-    const m = jst.month;                       // 1-12
-    const inSeason = m >= 10 || m <= 2;
-    const isWeeklySlot = jst.weekday === 1;    // 月曜
-    if (inSeason || isWeeklySlot) {
-      tasks.push({ kind: 'discover', year: y + 1 });
+    const parsed = parseDocument({ bytes, ...doc });
+    if (!validate(parsed)) { results.push({ year, status: 'rejected' }); continue; }
+
+    // 毎回作り直して上書きする
+    for (const [y, days] of splitByCalendarYear(parsed)) {
+      if (!years.includes(y)) continue;
+      await writeDerived(env, y, days, doc, key, parsed.diagnostics);
     }
-  } else if (now.getTime() - Date.parse(next.fetchedAt) > FRESH_TTL_MS) {
-    tasks.push({ kind: 'refresh', year: y + 1, reason: 'stale' });
+    results.push({ year, status: 'ok' });
   }
 
-  return tasks;
+  await prune(env, now);
+  return { results };
 }
-
-const FRESH_TTL_MS = 14 * 24 * 60 * 60 * 1000;  // 2 週間（FR-20）
 ```
 
-**`plan()` が扱う年は `y` と `y+1` のみ**であり、これは `activeYears`（[§3.4](#34-データ保持方針)）と一致する。過去年を取得対象にしないため、プルーニングで消したデータを再取得してしまうループは構造的に起こらない。
+**捨てたもの**
 
-**外部リクエスト数の見積もり**: 定常時は 0〜1 リクエスト/日（ページ HTML の取得のみ、しかも探索が必要な時期だけ）。14 日ごとに xlsx の条件付き GET が 1 回。NFR-04 を満たす。
+| 捨てたもの | 捨てた理由 |
+| --- | --- |
+| 条件付き GET（`If-None-Match` / `If-Modified-Since`） | リクエスト数は減らず、節約できるのは年 4MB 程度。ETag の保存・304 分岐の複雑さに見合わない |
+| 鮮度判定（`fetchedAt` と 14 日ゲート） | 頻度は Cron スケジュールで表現できる。状態を持つ必要がない |
+| 前回ハッシュとの比較による「変更なしスキップ」 | パースもコストが小さく（157KB / 数ミリ秒）、毎回作り直すほうが自己修復性が高い |
+| `fetchstate:{year}` の KV エントリ | 上記がなくなり不要 |
+| リビジョン番号の管理 | 「常に最新が正」でよい。履歴は R2 の原本オブジェクトが持つ |
+
+**残したもの**: 原本を保存するときの**内容ハッシュ**（[§7.5](#75-ストレージレイアウト)）。これは人が保守する値ではなく保存時に計算する内部的なキーで、同一内容を 26 回保存して重複させないためだけに使う。運用の手間はゼロ。
+
+**外部リクエスト数の見積もり**: 通常期は 2 週間に 1 回、ページ HTML 1 件 + ファイル 1〜2 件 = **月あたり 4〜6 リクエスト**。11〜1 月は 1 日 3 リクエスト程度。年間の総転送量は約 10MB。NFR-04 を大きく下回る。
 
 ### 7.4 URL 発見ロジック（`discover.ts`）
 
@@ -852,34 +847,34 @@ logs/
     2026-07-26T17-15-03Z.json        # 実行ログ（90日で自動削除可）
 ```
 
-**`raw/` 配下は削除・上書きを行わない。** ライフサイクルルールも設定しない。同一年に複数リビジョンがある場合は、sha256 の異なるオブジェクトとして併存する。
+**`raw/` 配下は削除・上書きを行わない。** ライフサイクルルールも設定しない。**公式サイトからファイルが消えた後は、ここにあるものが唯一残る版になる**（[§4.2](#42-xlsx-ファイル) で 2024 / 2025 年版の消失を実測済み）。
 
-`manifest.json` の例:
+**キーに内容ハッシュを使う理由**: 2 週間ごとに無条件取得するため、同一内容を年 26 回書き込むことになる。キーが内容から決まっていれば 2 回目以降は同じキーになり、自然に重複排除される。内容が実際に変わったときだけ新しいオブジェクトが増え、それがそのまま改訂履歴になる。**保存時に計算するだけで、人が保守する値ではない。**
+
+`manifest.json` の例（append-only。同一 sha256 は追記しない）:
 
 ```json
 {
   "year": 2026,
   "entries": [
     {
-      "revision": 1,
       "key": "raw/2026/mizunashi2026.6a60513a.xlsx",
       "sourceUrl": "https://www.city.hakodate.hokkaido.jp/docs/2014041800107/file_contents/mizunashi2026.xlsx",
       "sha256": "6a60513a...（64桁）",
       "bytes": 157084,
       "contentType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "httpEtag": "\"6a60513a-2659c\"",
-      "httpLastModified": "2026-07-22T05:12:26Z",
-      "fetchedAt": "2026-07-26T17:15:04Z",
+      "firstSeenAt": "2026-07-26T17:15:04Z",
+      "lastSeenAt": "2026-11-01T17:15:03Z",
       "discoveredBy": "page-scan",
       "parseStatus": "ok",
       "dayCount": 365
     }
   ],
-  "lastCheckedAt": "2026-07-26T17:15:04Z",
-  "lastHttpEtag": "\"6a60513a-2659c\"",
-  "lastHttpLastModified": "2026-07-22T05:12:26Z"
+  "lastRunAt": "2026-11-01T17:15:03Z"
 }
 ```
+
+`lastSeenAt` は「この内容が最後に公式サイトで確認できた時刻」。**公式サイトから消えた時期の目安**になる。
 
 #### KV (`MIZUNASHI_KV`)
 
@@ -887,16 +882,19 @@ logs/
 
 | キー | 値 | TTL |
 | --- | --- | --- |
-| `schedule:v1:{year}` | `YearSchedule` の JSON | なし（明示的に更新） |
+| `schedule:v1:{year}` | `YearSchedule` の JSON | なし（毎回上書き） |
 | `index:v1` | `ArchiveIndex` の JSON | なし |
 | `lock:ingest` | 実行中フラグ | 600秒 |
 
 KV ミス時は R2 から読み、KV に書き戻す（read-through）。
 
+> 取得状態を覚える `fetchstate:{year}` は不要になった（[§7.3](#73-取得ロジック)）。KV に置くのは**キャッシュとロックだけ**で、パイプラインの判断に使う状態は一切持たない。
+
 ### 7.6 冪等性と排他制御
 
-- **冪等性**: 保存キーが sha256 由来なので、同じ内容を何度取得しても同じオブジェクトになる。`manifest.json` への追記は sha256 の重複チェックを行う。
+- **冪等性**: 同じ入力からは同じ出力になる。原本の保存キーは内容ハッシュ由来なので重複せず、派生データは毎回上書きするので何度実行しても同じ結果に収束する。
 - **排他制御**: KV に `lock:ingest`（TTL 600秒）を置く簡易ロック。Cron と管理者手動実行の同時発火を防ぐ。KV の結果整合性により厳密ではないが、冪等なので二重実行しても壊れない。厳密さが必要になったら Durable Object へ移行する。
+- **自己修復**: パーサやバリデータを修正してデプロイすれば、次の実行で派生データが自動的に作り直される。手動での復旧操作を運用手順に組み込む必要がない。
 
 ### 7.7 検証（バリデーション）ゲート
 
@@ -975,7 +973,7 @@ export async function prune(env: Env, now: Date): Promise<PruneResult> {
 | 非削除対象 | `raw/**`（原本）、`raw/{year}/manifest.json`（取得履歴）、`snapshots/**` |
 | 年またぎの挙動 | 1/1 の JST 02:15 に走る Cron で前年の派生データが消える。**12/31 23:00 時点では前年（=当年）と翌年の両方が生きている**ので、年跨ぎの「次のセッション」照会は正常に動作する |
 | 可逆性 | 原本が残っているため、`POST /admin/ingest { year, fromArchive: true }` でいつでも再生成できる。この安全弁を必ず実装する |
-| 取得の抑止 | `plan()` は `activeYears` に含まれない年を取得対象にしない。「消したものをまた取りに行く」ループが起きないようにする |
+| 取得の抑止 | ingest は `activeYears` の年しか取得しない。「消したものをまた取りに行く」ループが構造的に起きない |
 
 **アクティブ年の判定は「JST の現在の年」に基づく。** UTC で判断すると 12/31 の日本時間 09:00〜24:00（UTC 12/31 00:00〜15:00）にズレが生じるため、必ず `jstYear()` を使う。
 
@@ -2133,7 +2131,7 @@ Content-Type: application/json
 
 | フィールド | 説明 |
 | --- | --- |
-| `force` | 鮮度判定（14 日ゲート）を無視して再取得する |
+| `force` | 次回の Cron を待たずに即座に取得・再生成する |
 | `fromArchive` | 公式サイトへアクセスせず、**R2 の原本から派生データを再生成**する。プルーニング後の年を一時的に復活させる、またはパーサ修正後に再生成する用途（[§7.8](#78-プルーニング今年来年のみ保持)） |
 
 - レスポンスは実行結果のサマリ。
@@ -2167,7 +2165,7 @@ function statusTtl(r: StatusResult): number {
 // Cache-Control: public, max-age=<ttl>, s-maxage=<ttl>, stale-while-revalidate=60
 ```
 
-**静的なデータ系**は `ETag` を `"{year}-{revision}"` から生成し、`If-None-Match` で 304 を返す。取り込み時に該当 URL の CDN キャッシュをパージする。
+**静的なデータ系**は `ETag` を派生データの内容ハッシュから生成し、`If-None-Match` で 304 を返す。取り込み時に該当 URL の CDN キャッシュをパージする。
 
 ```ts
 // 取り込み完了時
@@ -2827,7 +2825,6 @@ crons = ["15 17 * * *"]      # JST 02:15
 [vars]
 PAGE_URL = "https://www.city.hakodate.hokkaido.jp/docs/2014041800107/"
 PUBLIC_BASE_URL = "https://mizunashi.example.com"
-FRESH_TTL_DAYS = "14"
 USER_AGENT = "mizunashi-scheduler/1.0 (+https://mizunashi.example.com/about)"
 
 [observability]
@@ -3006,8 +3003,8 @@ interface ScheduleDiff {
 
 | 項目 | 仕組み |
 | --- | --- |
-| 翌年版の公開検知 | 日次 Cron が公式ページを走査（[§7.3](#73-plan-の判断ロジック)） |
-| 取得・重複排除 | 条件付き GET + sha256 による内容アドレス（[§7.5](#75-ストレージレイアウト)） |
+| 翌年版の公開検知 | Cron が公式ページを走査。通常 2 週間ごと、11〜1 月は日次（[§7.2](#72-cron-スケジュール)） |
+| 取得・重複排除 | 2週間ごとの無条件取得 + 内容ハッシュ由来のキー（[§7.5](#75-ストレージレイアウト)） |
 | 原本のアーカイブ | R2 `raw/` へ永久保存 |
 | パース・正規化 | アダプタ自動選択（[§8.2](#82-アダプタのインターフェース)） |
 | 対象年の判定 | タイトル + 曜日交差検証（[§8.4](#84-日付解決アルゴリズム)） |
@@ -3033,9 +3030,9 @@ interface ScheduleDiff {
 
 このシステムで最も危険なのは「壊れているのに誰も気づかない」ことである。年 1 回しか更新されないため、放置すると 1 年気づかない。以下で検知する。
 
-- **12/15 / 12/28 の時点で翌年データが未取得なら警告 / 重大アラート**（[§15.2](#152-アラート)）。「例年なら公開されている時期なのに来ていない」を能動的に検知する。
-- **最終チェックから 72 時間経過で `degraded`**（[§15.1](#151-ヘルスチェック)）。Cron 自体が止まっていることを検知する。
-- **CI でフィクスチャが取得できなければジョブを失敗させる**（[§16.2](#162-フォーマット変動に対するゴールデンテスト)）。テストの網が静かに外れることを防ぐ。
+- **12/15 / 12/28 の時点で翌年データが未取得なら警告 / 重大アラート**（[§15.2](#152-アラート)）。「例年なら公開されている時期なのに来ていない」を能動的に検知する。11〜1 月は Cron が日次で走るため、公開されれば遅くとも翌日には取り込まれる。
+- **最終実行から 72 時間経過で `degraded`**（[§15.1](#151-ヘルスチェック)）。Cron 自体が止まっていることを検知する。
+- **毎回作り直すため、壊れた状態が固定化しない。** 差分ベースなら「一度スキップと判断されたら次も同じ判断」で詰まりうるが、無条件取得ならパーサを直した時点で自動的に回復する。
 
 ---
 
@@ -3045,7 +3042,7 @@ interface ScheduleDiff {
 | --- | --- | --- | --- |
 | Unit | `packages/parser` | Vitest | **6 年分の実データ fixture を使ったゴールデンテスト**（下記 16.2）。フォーマット変動への耐性はここで担保する |
 | Unit | `packages/core/status` | Vitest | `computeStatus` の網羅テスト。境界時刻（start ちょうど / end ちょうど / 1秒前後）、日跨ぎ、年跨ぎ、データ範囲外 |
-| Unit | `packages/core/ingest` | Vitest | `plan()` の判定（14日ゲート、探索シーズン）、鮮度判定、sha256 冪等性、**`prune()` が `raw/` に触れないこと** |
+| Unit | `packages/core/ingest` | Vitest | `activeYears` の算出、同一内容を再取得しても原本が重複しないこと、**`prune()` が `raw/` に触れないこと** |
 | Unit | `packages/core/period` | Vitest | day / week / month / year の範囲算出、`PeriodSummary` 集計、月グリッド生成、うるう年 |
 | Unit | `packages/core/ics` | Vitest | ics 出力の RFC 5545 準拠（行折り返し 75 octets、エスケープ） |
 | Integration | `apps/api` | `@cloudflare/vitest-pool-workers` | 実 Workers ランタイム + Miniflare の R2/KV で全エンドポイントを検証。キャッシュヘッダ、ETag、problem+json |
@@ -3133,56 +3130,40 @@ describe('retention', () => {
 
 #### フィクスチャの管理方針
 
-**原本をリポジトリに含めない。** 函館市が公開したファイルそのものであり、再配布にあたるため。代わりに以下を追跡する。
+**原本をリポジトリに含めない。** 函館市が公開したファイルそのものであり、再配布にあたるため。リポジトリに置くのは `fixtures/README.md`（取得元と各ファイルの位置づけ）だけで、**チェックサムファイルも取得スクリプトも用意しない。**
 
-| 追跡するもの | 内容 |
-| --- | --- |
-| `fixtures/CHECKSUMS.txt` | sha256。取得時と CI で照合する |
-| `fixtures/README.md` | 取得元 URL と、各ファイルが代表するフォーマット差異 |
-| `scripts/fetch-fixtures.mjs` | 取得スクリプト |
+**期待値そのものがチェックサムの役割を果たす。** ゴールデンテストは日数・セッション数分布・祝日件数・警告件数まで既知の値と突き合わせる。ファイルが別物に差し替われば、これらが一致せずテストが落ちる。sha256 を別途保持しても、**同じことを二重に検出するだけで保守対象が増える**。
 
-```bash
-pnpm fixtures:fetch    # 取得 → CHECKSUMS.txt と照合 → 不一致なら破棄
+```ts
+const available = existsSync(FIXTURE_DIR);
+
+describe.skipIf(!available)('golden', () => { /* ... */ });
 ```
 
-#### 取得元は不変な URL に限る ★重要
+- フィクスチャが無い環境ではゴールデンテストを**スキップ**する。他のテストは通常どおり実行され、ネットワークが無くても開発は止まらない。
+- 取得手順は `README.md` に URL を書いておくだけにする。必要になった開発者が手で落とす。年に何度も起きる作業ではない。
 
-**フィクスチャの取得元に「公式サイトの生 URL」を使ってはならない。** 公式サイトのファイルは翌年版の公開時に削除される（[§4.2](#42-xlsx-ファイル) で 2024 / 2025 年版が 404 であることを実測済み）。生 URL を取得元にすると、**毎年その時期に取得が壊れる**。
+#### 過去年のファイルはローカルにあるものが最終版
 
-取得元は以下の優先順で選ぶ。いずれも内容が変わらないことが保証された URL である。
+公式サイトは翌年版の公開時に旧年版を削除する（[§4.2](#42-xlsx-ファイル)）。したがって:
 
-| 優先 | 取得元 | 不変性の根拠 |
-| --- | --- | --- |
-| 1 | **自前 R2 アーカイブ** `https://mizunashi.example.com/archive/{year}/{name}.{sha8}.xlsx` | キーが内容ハッシュ由来。削除禁止（[ADR-006](#付録b-adr設計上の意思決定記録)） |
-| 2 | **Internet Archive** `https://web.archive.org/web/{timestamp}id_/{原 URL}` | スナップショットは不変 |
-| 3 | （不可）公式サイトの生 URL | 毎年削除される |
+- **2026 年版**は公式サイトから取得できる（今年のファイルなので）。
+- **2016 / 2017 / 2020 / 2021 / 2022 年版**は既に削除済みで、Internet Archive にのみ残っている。README に Wayback の URL を記載する。
+- どちらも「取れたら使う、取れなければスキップ」でよい。**これらは過去のフォーマットを記録した参考資料であり、失っても本番サービスには一切影響しない。**
 
-`fetch-fixtures.mjs` は 1 → 2 の順に試し、両方で失敗したら当該フィクスチャを諦める（他は続行する）。
+#### 本番サービスとの関係
 
-**現状の課題**: 2026 年版は Wayback に未アーカイブで、自前 R2 もまだ存在しない（未デプロイ）。したがって現時点で取得元が生 URL しかなく、**2027 年版の公開時に取得不能になる**。デプロイ後に自前アーカイブへ切り替えるまでの暫定措置として、Wayback への保存を先に済ませておく（[§16.2 の運用](#162-フォーマット変動に対するゴールデンテスト)）。
+**フィクスチャは本番サービスと完全に無関係である。**
 
-#### 年次の手作業は発生しない
+| | フィクスチャを参照するか |
+| --- | --- |
+| ingest パイプライン | 参照しない（公式サイトから直接取得する） |
+| API / フロントエンド | 参照しない |
+| パーサのゴールデンテスト | 参照する（無ければスキップ） |
 
-`CHECKSUMS.txt` は**本番サービスとは無関係**である。この点を混同しない。
+翌年版が公開されても、フィクスチャまわりで**やることは何もない**。新しいフィクスチャを足すのは「新フォーマットが来てパーサが落ち、アラートが飛んだとき」だけで、カレンダー駆動の定期作業は存在しない。
 
-| | CHECKSUMS.txt を参照するか | 更新が必要になる条件 |
-| --- | --- | --- |
-| 本番の ingest パイプライン | **参照しない** | — |
-| API / フロントエンド | **参照しない** | — |
-| パーサのゴールデンテスト | 参照する | フィクスチャを**追加したとき**のみ |
-
-- **翌年版が公開されても `CHECKSUMS.txt` の更新は不要。** ingest は公式ページを走査して取得・パース・保存するまでを自動で行い、チェックサムファイルを一切見ない。仮に `CHECKSUMS.txt` が何年も古いままでも、サービスは正常に動き続ける。
-- 既存エントリは**永久に更新不要**。取得元が不変 URL なので内容が変わらない。
-- 新しいフィクスチャを足すのは「**新フォーマットが来てパーサが落ち、アラートが飛んだとき**」だけである。これはカレンダー駆動の定期作業ではなく、障害対応の一部として行う反応的な作業。フォーマットが変わらない年は何もしなくてよい。
-
-#### 実行時の挙動
-
-- **フィクスチャが無い環境ではゴールデンテストをスキップする。** `describe.skipIf(!fixturesAvailable)` を使い、他のテストは通常どおり実行する。ネットワークが無くても開発を止めない。
-- **チェックサムが一致しないファイルは使わずに落とす。** 取得元が差し替わっていた場合に、気づかないまま別データでテストが通る事態を防ぐ。不一致は「取得元が不変ではなくなった」ことを意味するので、警告ではなく**エラー**として扱う。
-- **CI ではフィクスチャを取得してから実行する。** GitHub Actions のキャッシュを `CHECKSUMS.txt` のハッシュでキーイングし、通常はキャッシュヒットで外部アクセスを発生させない。
-- **CI ではスキップを許さない。** ローカルでは skip でよいが、CI で `fixturesAvailable === false` なら**ジョブを失敗させる**。「取得できなくなったこと」に気づかないまま golden の網が外れるのが最悪のケースなので、静かな劣化を許さない。
-
-> このプロジェクトが恒久的に保全すべき原本は R2 の `raw/`（[ADR-006](#付録b-adr設計上の意思決定記録)）であり、git リポジトリではない。フィクスチャはあくまでテスト用のコピーなので、取得手順とチェックサムさえ残っていれば再構築できる。**そして自前アーカイブが稼働すれば、このプロジェクト自身がフィクスチャの恒久的な供給源になる。**
+> このプロジェクトが恒久的に保全すべき原本は R2 の `raw/`（[ADR-006](#付録b-adr設計上の意思決定記録)）であり、テストフィクスチャではない。運用が始まれば、公式サイトから消えたファイルの最終版は自前アーカイブに残り続ける。
 
 ```ts
 const GOLDEN = [
@@ -3752,13 +3733,11 @@ ESLint のスコープ外にあるものだけを残す。
 // scripts/check-invariants.mjs
 const RULES = [
   {
-    id: 'fixtures-unchanged',
-    // §5 禁止事項: 実データのフィクスチャは不変。ゴールデンテストの前提が壊れる
-    kind: 'hash',
-    files: 'packages/core/test/fixtures/*',
-    // 既知の sha256 と一致すること。追加は可、変更・削除は不可
-    manifest: 'packages/core/test/fixtures/CHECKSUMS.txt',
-    message: 'フィクスチャの内容が変更されている。実データの同一性を壊してはいけない',
+    id: 'no-fixture-data-committed',
+    // 実データは函館市の原本そのもの。再配布にあたるため追跡しない
+    kind: 'tracked-files',
+    pattern: /^packages\/core\/test\/fixtures\/.+\.(xlsx|xlsm|csv|pdf)$/,
+    message: 'フィクスチャの実データはコミットしない（.gitignore を確認すること）',
   },
   {
     id: 'no-raw-deletion',
@@ -3780,7 +3759,7 @@ const RULES = [
 ];
 ```
 
-**`fixtures-unchanged` が特に重要。** 実データフィクスチャはゴールデンテストの土台であり、これが書き換わると「テストは通るのに実装が間違っている」状態を検出できなくなる。整形ツールの誤設定や、エージェントによる善意の「修正」を防ぐため、チェックサムで固定する。
+**フィクスチャの内容自体はチェックしない。** ゴールデンテストの期待値（日数・分布・祝日件数・警告件数）がその役割を果たすため、sha256 を別途持つと同じことを二重に検出することになる（[§16.2](#162-フォーマット変動に対するゴールデンテスト)）。ここで見るのは「実データを誤ってコミットしていないか」だけ。
 
 **位置づけ**: ESLint の代替ではなく補完である。「設計書に書いた禁止事項」を、レビュアーの記憶ではなく CI で担保するための仕組み。ルールを追加するときは、まず ESLint で表現できないかを検討する。
 
@@ -3859,7 +3838,7 @@ catalog:
 ### 18.1 公式サイトへの配慮
 
 - **User-Agent を明示**: `mizunashi-scheduler/1.0 (+https://mizunashi.example.com/about)` — 連絡先が辿れる形にする。
-- **リクエスト頻度**: 定常時 0〜1 req/日。条件付き GET により転送量も最小化。
+- **リクエスト頻度**: 通常期は 2 週間に 1 回（月 4〜6 リクエスト）。11〜1 月のみ日次。年間の総転送量は約 10MB。
 - **`robots.txt` の尊重**: 実装時に `https://www.city.hakodate.hokkaido.jp/robots.txt` を確認し、`/docs/` 配下が Disallow でないことを検証する（現時点では通常の公開ページであり問題ないと判断）。
 - **リトライ**: 指数バックオフ（1s → 4s → 16s）、最大 3 回。5xx 時のみリトライし、4xx はリトライしない。
 - **Imperva CDN 配下**であることに注意。Cookie を保持しないシンプルな GET に留め、ボット検知を刺激しない。
@@ -3906,8 +3885,6 @@ catalog:
 - [ ] モノレポ初期化（pnpm workspace + catalog + turbo + TypeScript strict）
 - [ ] **コード品質基盤の整備（[§17](#17-コード品質lint--format--型)）**: ESLint / Prettier / `tsconfig.base.json` / lefthook / `.editorconfig` / `pnpm check` / CI の `check` ジョブ
 - [ ] `scripts/check-invariants.mjs`（不変条件チェック）の骨組み
-- [ ] `scripts/fetch-fixtures.mjs`（不変 URL からの取得 + チェックサム照合）
-- [ ] **2026 年版を Internet Archive に保存**し、取得元を生 URL から不変 URL へ切り替える（[§16.2](#162-フォーマット変動に対するゴールデンテスト)。2027 年版の公開までに完了させること）
 - [ ] `packages/schema`: Zod 定義（`Session.index` / `coverage` / `DaySummary.gaps` を含む）
 - [ ] `packages/parser`: `sniff` + `readers/xlsx`（`<rPh>` 除外）+ `readers/csv`（Shift_JIS）
 - [ ] `packages/parser`: `adapters/grid-monthly` + `adapters/flat-csv` + `registry`
@@ -3919,8 +3896,7 @@ catalog:
 ### M2: 取得パイプライン
 
 - [ ] `Storage` / `Cache` インターフェースと R2 / KV 実装
-- [ ] `discover` / `fetcher`（条件付き GET）/ `archive`（sha256 キー、不変）
-- [ ] `plan()`（14日ゲート・翌年探索シーズン）
+- [ ] `discover` / `fetcher`（無条件取得）/ `archive`（内容ハッシュ由来のキー、不変）
 - [ ] バリデーションゲート
 - [ ] **`prune()`（今年+来年のみ保持、`raw/` 不可侵）**
 - [ ] MSW を使った統合テスト（200/304/404/破損）
@@ -4238,6 +4214,25 @@ WantedBy=timers.target
 - **理由**: これらは**レビュアーの記憶に依存させてはいけない**種類の規約である。設計書に書いただけでは、半年後に別の実装者（あるいは同じ実装者）が破る。単純なパターン検索でも大半の違反を捕捉でき、実装コストは 100 行程度と小さい。
 - **補強**: `noUncheckedIndexedAccess` を有効にすることで、`sessions[0]` が `Session | undefined` となり、単一セッション前提のコードは**型レベルでも**エラーになる。
 - **トレードオフ**: `check-invariants.mjs` に残した分は正規表現ベースなので偽陽性・偽陰性がある。ルールを追加するときは、まず ESLint の `no-restricted-*` で表現できないかを検討する。
+
+### ADR-019: 差分判定をやめ、2 週間ごとに無条件で取得して作り直す
+
+- **状況**: 当初は「条件付き GET → 304 ならスキップ → sha256 が同じならスキップ → 変わっていればリビジョンを上げて再生成」という差分ベースの設計にしていた。ETag / `fetchedAt` / 前回ハッシュ / リビジョン番号という 4 種類の状態を持つ必要があった。
+- **決定**: **状態を持たない。** 2 週間ごと（11〜1 月は日次）に無条件でダウンロードし、そのたびに派生データを作り直して上書きする。
+- **理由**:
+  1. **節約になっていなかった。** 条件付き GET はリクエスト数を減らさず、減るのは転送量だけ。年 26 回 × 157KB = **約 4MB** に過ぎない。4 種類の状態を管理する複雑さに見合わない。
+  2. **提供対象が今年と来年だけ。** 扱う年は常に 1〜2、ファイルは 1〜2 件。差分計算で節約できる処理量がそもそも存在しない（パースは 157KB / 数ミリ秒）。
+  3. **自己修復する。** 毎回作り直すため、パーサやバリデータを修正してデプロイすれば次の実行で自動的に正しいデータへ回復する。差分ベースだと「入力が変わっていない」と判断してスキップし、手動で再生成を促す運用手順が必要になっていた。
+  4. **頻度をスケジュールで表現できる。** 「14 日経過したか」をコードで判定するのではなく、Cron を 2 週間ごとに設定すれば同じことが実現できる。テスト対象のロジックが減る。
+- **残したもの**: 原本を保存するときの**内容ハッシュ由来のキー**。年 26 回の書き込みで同一内容が重複しないようにするためで、保存時に計算する内部的な値であり運用の手間はない。内容が実際に変わったときだけ新しいオブジェクトが増え、それがそのまま改訂履歴になる。
+- **トレードオフ**: 公式サイトへのリクエストが増える（実質 0 → 月 4〜6 件）。転送量は年 10MB 程度で、相手方への負荷として無視できる範囲。
+
+### ADR-020: テストフィクスチャにチェックサムを持たせない
+
+- **状況**: フィクスチャの実データはリポジトリに含めない（再配布回避）。当初はローカルのファイルが原本と同一であることを `CHECKSUMS.txt` で検証する設計にしていた。
+- **決定**: **チェックサムファイルも取得スクリプトも用意しない。** 取得元 URL を README に書き、無ければゴールデンテストをスキップする。
+- **理由**: **ゴールデンテストの期待値そのものがチェックサムの役割を果たす。** 日数・セッション数分布・祝日件数・警告件数まで既知の値と突き合わせているため、ファイルが差し替われば必ず落ちる。sha256 を別途保持しても同じことを二重に検出するだけで、保守対象が 1 つ増える。
+- **前提**: フィクスチャは**過去のフォーマットを記録した参考資料**であり、本番サービスは一切参照しない。失っても運用に影響しない（[§16.2](#162-フォーマット変動に対するゴールデンテスト)）。
 
 ### ADR-018: PDF はアーカイブするがパースしない
 

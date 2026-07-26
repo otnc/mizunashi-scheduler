@@ -74,7 +74,6 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 | `pnpm --filter api dev` | Worker をローカル起動（`wrangler dev --local`） |
 | `pnpm --filter web dev` | Astro をローカル起動 |
 | `pnpm parser:debug <file>` | パーサのアダプタ選択結果と Diagnostics を表示 |
-| `pnpm fixtures:fetch` | テストフィクスチャを取得して CHECKSUMS.txt と照合する |
 
 **コミット前に `pnpm check` を通す。** pre-commit フックは軽い整形しか行わないため、これはフックに任せず自分で走らせる。
 
@@ -147,7 +146,7 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 | `sessions[0]` だけを扱う実装 | 1日に複数回あるのが常態（2021年版では 2 回以上が 253/365 日）。[§13.5](./docs/DESIGN.md#135-daytimeline-の描画仕様) の禁止事項 | ESLint `no-restricted-syntax` + `noUncheckedIndexedAccess` |
 | `packages/core` / `packages/parser` での `node:` インポート | プラットフォーム非依存を保つ（[§5.3](./docs/DESIGN.md#53-レイヤ構成)） | ESLint `no-restricted-imports` |
 | `test/fixtures/` の実データをコミット | 函館市が公開した原本そのもので、再配布にあたる。`.gitignore` で除外済み | `check-invariants` |
-| `test/fixtures/` の編集・整形（改行正規化を含む） | 原本との同一性が回帰テストの前提 | `CHECKSUMS.txt` との照合 |
+| `test/fixtures/` の編集・整形（改行正規化を含む） | 原本との同一性がゴールデンテストの前提 | ゴールデンテストの期待値 |
 | `raw/` 配下のオブジェクト削除 | 原本は永久保存。公式サイトから旧年版が消えるため、失うと復元不能（[ADR-006](./docs/DESIGN.md#付録b-adr設計上の意思決定記録) / ADR-009） | `check-invariants` |
 | 年のハードコード | 来年データ公開時に年切替が効かなくなる（FR-10 / [ADR-011](./docs/DESIGN.md#付録b-adr設計上の意思決定記録)） | `check-invariants` |
 | `firstStart`〜`lastEnd` を「入浴可能時間」として表示 | 谷を含むため誤り。合計は `totalMinutes` を使う | レビュー |
@@ -161,11 +160,10 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 
 - **時刻に依存するロジックは `now` を引数で受ける。** `new Date()` を関数内部で呼ばない。テストで任意の時刻を注入できることを設計の前提にする。
 - `TZ` 環境変数を `UTC` / `Asia/Tokyo` / `America/New_York` のいずれに変えても結果が変わらないこと。
-- **フィクスチャの実データはリポジトリに含めない。** 再配布を避けるため。`pnpm fixtures:fetch` で取得し、`CHECKSUMS.txt` で同一性を検証する。取得できない環境ではゴールデンテストはスキップされる（ただし CI ではスキップを失敗として扱う）。
-- **フィクスチャの取得元に公式サイトの生 URL を使わない。** 翌年版の公開時に削除されるため、毎年その時期に壊れる。自前 R2 アーカイブか Internet Archive の不変スナップショットを使う（[DESIGN.md §16.2](./docs/DESIGN.md#162-フォーマット変動に対するゴールデンテスト)）。
-- **`CHECKSUMS.txt` は本番サービスと無関係。** ingest も API も参照しない。翌年版が公開されても更新不要で、定期的な保守作業は発生しない。追記するのは新フォーマットに対応したときだけ。
+- **フィクスチャの実データはリポジトリに含めない。** 再配布を避けるため。取得元は `fixtures/README.md` に記載してあるので、必要な開発者が手で落とす。**無い環境ではゴールデンテストはスキップされる。**
+- **フィクスチャは本番サービスと無関係。** ingest も API も参照しない。翌年版が公開されてもフィクスチャまわりでやることは何もない。
 - **パーサを変更したら、既存 6 件のフィクスチャに対するゴールデンテストが壊れていないことを必ず確認する。** 年 1 回しか更新されないデータなので、壊れたことに気づくのが 1 年後になる事態を防ぐ。
-- 新しいフォーマットに対応したら、**そのフォーマットを `CHECKSUMS.txt` と取得スクリプトに追加**してゴールデンテストを書く。アダプタだけ足してテストを書かないのは不可。
+- 新しいフォーマットに対応したら、**その実データを手元に置いてゴールデンテストを書き、取得元を `fixtures/README.md` に追記する**。アダプタだけ足してテストを書かないのは不可。
 - 境界時刻（`start` ちょうど / `end` ちょうど / その前後 1 秒）は必ずテストする。
 
 ## 7. コミットメッセージ規約（Conventional Commits、日本語）

@@ -2,44 +2,34 @@
 
 パーサのゴールデンテスト（DESIGN.md §16.2）が使う実データです。**函館市が公開した原本そのものであり、再配布を避けるためリポジトリには含めていません。**
 
-## 取得
+このディレクトリにファイルが無い場合、ゴールデンテストはスキップされます。他のテストは通常どおり実行されます。
 
-```bash
-pnpm fixtures:fetch
+**本番サービスとは無関係です。** ingest パイプラインは公式サイトから直接取得するため、ここのファイルを参照しません。翌年版が公開されても、このディレクトリで何かをする必要はありません。
+
+## 一覧と取得元
+
+| ファイル | 年 | 形式 | 代表するフォーマット差異 |
+| --- | --- | --- | --- |
+| `mizunashi2026.xlsx` | 2026 | XLSX | 整数 HHMM・祝日列・通年 |
+| `2022mizunasionsen.xlsx` | 2022 | XLSX | 小数時刻・シリアル値破損・時刻の誤入力 2 件 |
+| `R2.2021.xlsx` | 2021 | XLSX | 小数時刻・シリアル値破損・孤立した区切り 106 件 |
+| `r02mizunashi.2020.xlsx` | 2020 | XLSX | 9 シート（4〜12 月）・長さ 0 のセッション 1 件 |
+| `h29mizunashi.csv` | 2017年度 | CSV | Shift_JIS・会計年度（4月〜翌3月）・セル内改行 |
+| `h28mizunashi.csv` | 2016年度 | CSV | Shift_JIS・会計年度（4月〜翌3月）・セル内改行 |
+
+2026 年版は公式サイトから取得できます。
+
+```
+https://www.city.hakodate.hokkaido.jp/docs/2014041800107/file_contents/mizunashi2026.xlsx
 ```
 
-`CHECKSUMS.txt` と照合し、一致しないファイルは破棄します。取得できない場合、該当するゴールデンテストはスキップされます（他のテストは通常どおり実行されます）。
+それ以外は公式サイトから既に削除されており、Internet Archive にのみ残っています。以下の CDX 検索で現存するスナップショットを列挙できます。
 
-## 一覧
+```
+https://web.archive.org/cdx/search/cdx?url=www.city.hakodate.hokkaido.jp%2Fdocs%2F2014041800107%2F&matchType=prefix&fl=timestamp,original,mimetype
+```
 
-| ファイル | 年 | 形式 | 取得元 | 代表するフォーマット差異 |
-| --- | --- | --- | --- | --- |
-| `mizunashi2026.xlsx` | 2026 | XLSX | ⚠️ 公式サイト（暫定） | 整数 HHMM・祝日列・通年 |
-| `2022mizunasionsen.xlsx` | 2022 | XLSX | Internet Archive | 小数時刻・シリアル値破損・時刻の誤入力 2 件 |
-| `R2.2021.xlsx` | 2021 | XLSX | Internet Archive | 小数時刻・シリアル値破損・孤立した区切り 106 件 |
-| `r02mizunashi.2020.xlsx` | 2020 | XLSX | Internet Archive | 9 シート（4〜12 月）・長さ 0 のセッション 1 件 |
-| `h29mizunashi.csv` | 2017年度 | CSV | Internet Archive | Shift_JIS・会計年度（4月〜翌3月）・セル内改行 |
-| `h28mizunashi.csv` | 2016年度 | CSV | Internet Archive | 同上 |
-
-詳細は DESIGN.md §4.4 を参照してください。
-
-## 取得元は不変な URL に限る
-
-公式サイトのファイルは翌年版の公開時に削除されます（2024 / 2025 年版は既に 404）。**生 URL を取得元にすると毎年その時期に壊れる**ため、内容が変わらない URL のみを使います。
-
-| 優先 | 取得元 |
-| --- | --- |
-| 1 | 自前 R2 アーカイブ `/archive/{year}/{name}.{sha8}.xlsx` |
-| 2 | Internet Archive `https://web.archive.org/web/{timestamp}id_/{原URL}` |
-| 3 | （不可）公式サイトの生 URL |
-
-**⚠️ 2026 年版は現時点で例外です。** Wayback に未アーカイブで、自前アーカイブも未デプロイのため、暫定的に公式サイトの生 URL を使っています。**2027 年版が公開されると取得できなくなります。** デプロイ後に自前アーカイブへ切り替えてください。
-
-## 更新について
-
-このディレクトリの `CHECKSUMS.txt` は**本番サービスとは無関係**です。ingest パイプラインも API も参照しません。翌年版が公開されても更新は不要で、既存エントリは取得元が不変なため永久に更新不要です。
-
-追記が必要になるのは「新しいフォーマットが来てパーサが落ちたとき」だけで、定期的な作業ではありません。
+取得は `https://web.archive.org/web/{timestamp}id_/{原 URL}` の形式で行います（`id_` を付けると Wayback のツールバーが挿入されない原本が得られます）。ファイル名と対象年が一致しない点に注意してください（`R2.xlsx` の中身は 2021 年です。DESIGN.md §4.4.2）。
 
 ## 注意
 
