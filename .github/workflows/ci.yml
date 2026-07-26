@@ -18,7 +18,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # packageManager を置かない方針（AGENTS.md §3）なので、ここで版を指示する。
+      # 上限を切らないという方針に合わせて latest を使う
       - uses: pnpm/action-setup@v4
+        with:
+          version: latest
 
       # engines の下限で検証する。手元の最新でしか動かない状態を防ぐ（AGENTS.md §3）
       - uses: actions/setup-node@v4
