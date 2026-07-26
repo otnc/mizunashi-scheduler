@@ -34,10 +34,10 @@ packages/
 
 ## 公開パッケージ
 
-| パッケージ | 内容 |
-| --- | --- |
-| [`@mizunashi/api-types`](./packages/api-types) | レスポンスの型定義。依存ゼロ・CJS / ESM 両対応 |
-| [`@mizunashi/api-client`](./packages/api-client) | 薄い fetch クライアント |
+| パッケージ | npm | 内容 |
+| --- | --- | --- |
+| [`@mizunashi/api-types`](./packages/api-types) | [link](https://www.npmjs.com/package/@mizunashi/api-types) | レスポンスの型定義。依存ゼロ・CJS / ESM 両対応 |
+| [`@mizunashi/api-client`](./packages/api-client) | [link](https://www.npmjs.com/package/@mizunashi/api-client) | 薄い fetch クライアント |
 
 ```ts
 import { MizunashiClient } from '@mizunashi/api-client';
