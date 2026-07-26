@@ -595,7 +595,11 @@ mizunashi-scheduler/
 │       ├── astro.config.mjs
 │       └── package.json
 ├── packages/
-│   ├── schema/                    # Zod スキーマ + 型（唯一の真実）
+│   ├── api-types/                 # ★npm 公開。レスポンス型のみ（実行時依存ゼロ）
+│   │   ├── src/generated.d.ts     #   schema の Zod 定義から生成する
+│   │   └── package.json
+│   ├── api-client/                # ★npm 公開。薄い fetch ラッパー
+│   ├── schema/                    # Zod スキーマ + 型（唯一の真実・非公開）
 │   ├── parser/                    # 形式判別 + アダプタ + 正規化（§8）
 │   │   └── src/
 │   │       ├── sniff.ts
@@ -625,7 +629,9 @@ mizunashi-scheduler/
 ├── .github/workflows/
 │   ├── ci.yml                     # lint / format / typecheck / test / invariants
 │   ├── deploy.yml
+│   ├── release.yml                # npm 公開（Trusted Publishing・§11.8）
 │   └── weekly.yml                 # knip / pnpm audit
+├── .changeset/                    # Changesets によるバージョン管理
 ├── .vscode/
 │   ├── extensions.json
 │   └── settings.json
@@ -2011,12 +2017,75 @@ function withStatus(s: ResolvedSession, t: number): ResolvedSession {
 - CORS: `Access-Control-Allow-Origin: *`（公開データのため）
 - バージョニング: URL パス (`/v1`)。破壊的変更時のみ `/v2` を追加し、`/v1` は最低 1 年維持
 
-### 11.2 エンドポイント一覧
+### 11.2 すべてのレスポンスに含める `meta`
+
+**エラーを含むすべての成功レスポンスに `meta` を付ける。** 利用者が「この情報がいつ時点のものか」を常に判断できるようにするため。
+
+```ts
+export interface ResponseMeta {
+  /** このレスポンスを生成した時刻（origin での生成時刻・ISO 8601） */
+  servedAt: string;
+  /** 原本を公式サイトから取得した時刻 */
+  fetchedAt: string;
+  /** 派生データ（YearSchedule）を生成した時刻 */
+  generatedAt: string;
+  /** fetchedAt からの経過秒。「何日前のデータか」を計算させない */
+  dataAgeSeconds: number;
+  timezone: 'Asia/Tokyo';
+  apiVersion: 'v1';
+  schemaVersion: 1;
+  source: {
+    pageUrl: string;
+    fileName: string;
+    /** 複数年をまたぐレスポンスでは年ごとの由来を列挙する */
+    years: { year: number; fetchedAt: string; sha256: string | null }[];
+  };
+}
+```
+
+```json
+"meta": {
+  "servedAt": "2026-07-26T09:31:00.412Z",
+  "fetchedAt": "2026-07-22T17:15:04.000Z",
+  "generatedAt": "2026-07-22T17:15:06.412Z",
+  "dataAgeSeconds": 317156,
+  "timezone": "Asia/Tokyo",
+  "apiVersion": "v1",
+  "schemaVersion": 1,
+  "source": {
+    "pageUrl": "https://www.city.hakodate.hokkaido.jp/docs/2014041800107/",
+    "fileName": "mizunashi2026.xlsx",
+    "years": [{ "year": 2026, "fetchedAt": "2026-07-22T17:15:04.000Z", "sha256": "6a60513a…" }]
+  }
+}
+```
+
+- 複数年にまたがるレスポンス（週や年をまたぐ期間ビュー）では、`meta.fetchedAt` は**最も古い**取得時刻を採る。「このレスポンス全体として最低でもこの時点のデータである」を意味する保守的な値にする。年ごとの内訳は `meta.source.years` を見る。
+- エラーレスポンス（[§11.6](#116-エラーレスポンス-rfc-9457)）にも `meta` を含める。ただしデータを読めていない場合は `fetchedAt` / `generatedAt` / `dataAgeSeconds` を `null` にする。
+- 既存の `source` フィールドは `meta.source` に統合し、各エンドポイント固有のレスポンス本体からは取り除く。
+
+#### `servedAt` とキャッシュの関係 ★重要
+
+`servedAt` は **origin がこのペイロードを生成した時刻**であり、クライアントがリクエストを送った時刻そのものではない。キャッシュから返された場合、両者は最大でキャッシュの `max-age` 分ずれる。
+
+この曖昧さを残さないため、次のように扱う。
+
+| レスポンス | 共有キャッシュ | `servedAt` の正確さ |
+| --- | --- | --- |
+| `relative` を含む（`at` 未指定・`/status`） | **しない**（`Cache-Control: no-store`） | リクエストごとに生成するため常に正確 |
+| `at=none` の静的バリアント | する（`s-maxage=60`） | 最大 60 秒古くなりうる |
+| `/archive/*`（原本ファイル） | する（immutable） | 対象外 |
+
+- 共有キャッシュを許すのは**現在時刻に依存しないレスポンスだけ**に限る。現在時刻に依存する値を含むレスポンスをキャッシュすると、`servedAt` だけでなく `endsInSeconds` などの相対値まで古くなり、実害が出る。
+- キャッシュから返された場合は標準の `Age` ヘッダが付く。**正確な受信時刻が必要なクライアントは `Age` か自分の時計を使う。** 公式ラッパー（[§11.8](#118-npm-での型とラッパーの配信)）は受信時刻を `receivedAt` として付与する。
+- Worker は API リクエストごとに必ず実行されるため、`servedAt` の付与コストはゼロに近い。共有キャッシュを捨てても NFR-01 は KV 読み取り（数ミリ秒）で満たせる。
+
+### 11.3 エンドポイント一覧
 
 | メソッド | パス | 概要 | キャッシュ |
 | --- | --- | --- | --- |
-| GET | `/api/v1/status` | 現在（または指定時刻）の入浴可否 | 動的（§11.4） |
-| **GET** | **`/api/v1/days/{date}`** | **単日**。全セッション + いつまで/いつから | 動的 or 24h（§11.4） |
+| GET | `/api/v1/status` | 現在（または指定時刻）の入浴可否 | 動的（§11.5） |
+| **GET** | **`/api/v1/days/{date}`** | **単日**。全セッション + いつまで/いつから | 動的 or 24h（§11.5） |
 | **GET** | **`/api/v1/weeks/{date}`** | **週**。指定日を起点とする 7 日間 | 動的 or 24h |
 | **GET** | **`/api/v1/months/{yyyy-mm}`** | **月**。1 日から最終日まで | 動的 or 24h |
 | **GET** | **`/api/v1/years/{year}`** | **年**。1/1〜12/31 | 動的 or 24h |
@@ -2063,7 +2132,7 @@ interface PeriodResponse {
 | `lang` | `ja` \| `en` | `ja` | 祝日名・注意書きの言語 |
 | `fields` | csv | 全部 | 返却フィールドの絞り込み（例: `fields=days,summary`） |
 
-### 11.3 詳細
+### 11.4 詳細
 
 #### `GET /api/v1/status`
 
@@ -2398,7 +2467,7 @@ Content-Type: application/json
 - レスポンスは実行結果のサマリ。
 - `fromArchive` で復活させた過去年の派生データは、次回の日次プルーニングで再び削除される（意図的な挙動）。恒久的に必要なら `activeYears` の定義自体を変更すること。
 
-### 11.4 キャッシュ戦略
+### 11.5 キャッシュ戦略
 
 期間ビューは `relative` を含むかどうかでキャッシュ特性が変わる。**`at=none` で静的レスポンスを取得する経路を必ず用意**しておくことで、CDN 効率と鮮度を両立させる。
 
@@ -2411,20 +2480,13 @@ Content-Type: application/json
 
 > **フロントの推奨実装**: 期間ビューは `at=none` で取得して長期キャッシュに乗せ、`relative` 相当（いつまで / いつから）は**クライアント側で `computeStatus` を実行して算出**する（[ADR-005](#付録b-adr設計上の意思決定記録)）。API の `relative` は外部利用者向けの利便機能と位置づける。
 
-**`/status` および `relative` 付きレスポンスの可変 TTL** — 次に状態が変化するまでの秒数に合わせて TTL を決める。これにより「入浴可能になった瞬間」の反映が遅れない。
+**`/status` および `relative` 付きレスポンスは共有キャッシュに載せない。** `endsInSeconds` のような現在時刻からの相対値を含むため、キャッシュすると古い残り時間を返してしまう。`servedAt` の正確さもここで担保される（[§11.2](#112-すべてのレスポンスに含める-meta)）。
 
-```ts
-function statusTtl(r: StatusResult): number {
-  const boundaries = [
-    r.current ? r.current.endsInSeconds : Infinity,
-    r.next ? r.next.startsInSeconds : Infinity,
-  ];
-  const secondsToChange = Math.min(...boundaries);
-  return clamp(secondsToChange, 15, 300);   // 15秒〜5分
-}
-
-// Cache-Control: public, max-age=<ttl>, s-maxage=<ttl>, stale-while-revalidate=60
 ```
+Cache-Control: no-store
+```
+
+クライアント側での短時間の再利用は、ラッパーのメモリキャッシュ（[§11.8](#118-npm-での型とラッパーの配信)）に任せる。相対値はラッパーが `receivedAt` を基準に再計算できるため、HTTP キャッシュに頼る必要がない。
 
 **静的なデータ系**は `ETag` を派生データの内容ハッシュから生成し、`If-None-Match` で 304 を返す。取り込み時に該当 URL の CDN キャッシュをパージする。
 
@@ -2434,7 +2496,7 @@ await caches.default.delete(new Request(`https://${host}/api/v1/years/${year}`))
 // または Cache Tag（Enterprise）/ purge API
 ```
 
-### 11.5 エラーレスポンス (RFC 9457)
+### 11.6 エラーレスポンス (RFC 9457)
 
 ```json
 {
@@ -2443,9 +2505,21 @@ await caches.default.delete(new Request(`https://${host}/api/v1/years/${year}`))
   "status": 400,
   "detail": "`to` must be within 400 days of `from`.",
   "instance": "/api/v1/days?from=2026-01-01&to=2028-01-01",
-  "errors": [{ "path": "to", "message": "range too large" }]
+  "errors": [{ "path": "to", "message": "range too large" }],
+  "meta": {
+    "servedAt": "2026-07-26T09:31:00.412Z",
+    "fetchedAt": "2026-07-22T17:15:04.000Z",
+    "generatedAt": "2026-07-22T17:15:06.412Z",
+    "dataAgeSeconds": 317156,
+    "timezone": "Asia/Tokyo",
+    "apiVersion": "v1",
+    "schemaVersion": 1,
+    "source": { "pageUrl": "…", "fileName": "mizunashi2026.xlsx", "years": [] }
+  }
 }
 ```
+
+エラーでも `meta` を返す。障害報告を受けたときに「いつ時点のデータで、いつ配信されたレスポンスか」が分かるだけで切り分けが速くなる。データを読めていない場合（`503 data-unavailable` など）は `fetchedAt` / `generatedAt` / `dataAgeSeconds` を `null` にする。
 
 | ステータス | type | 発生条件 |
 | --- | --- | --- |
@@ -2457,11 +2531,121 @@ await caches.default.delete(new Request(`https://${host}/api/v1/years/${year}`))
 | 500 | `internal-error` | 予期しないエラー（詳細は返さずログに記録） |
 | 503 | `data-unavailable` | データ未初期化（初回デプロイ直後など） |
 
-### 11.6 レート制限
+### 11.7 レート制限
 
 - Cloudflare の WAF Rate Limiting Rule で `/api/*` に対し **60 req/min per IP**。
 - 超過時は 429 + `Retry-After`。
 - 自サイト（同一オリジン）からのリクエストは Referer で緩和ルールを設けてもよい。
+
+### 11.8 npm での型とラッパーの配信
+
+API を機械可読にした以上、**利用者が型を書き起こさずに済むようにする**。`@mizunashi` スコープで 2 つのパッケージを公開する。
+
+| パッケージ | 内容 | 依存 |
+| --- | --- | --- |
+| **`@mizunashi/api-types`** | レスポンスの TypeScript 型定義のみ | **ゼロ**（`.d.ts` のみ・実行時コードなし） |
+| **`@mizunashi/api-client`** | 薄い fetch ラッパー | `@mizunashi/api-types`（型のみ） |
+
+内部パッケージ（`@mizunashi/schema` / `parser` / `core`）は `private: true` のまま公開しない。**公開するのは API の契約面だけ**に絞る。
+
+#### なぜ型とラッパーを分けるか
+
+- **型だけ欲しい利用者が実行時コードを背負わない。** 別言語からの利用や、独自の HTTP クライアントを使う場合に `api-types` だけを入れられる。
+- **ラッパーの都合で型が壊れない。** 型は API の契約であり、ラッパーの実装詳細とは変更理由が異なる。
+
+#### `@mizunashi/api-types`
+
+- **Zod スキーマから型を導出して `.d.ts` として出力する。** 手書きの二重管理をしない。`packages/schema` の Zod 定義が唯一の情報源。
+- 実行時依存を持たせないため、**Zod スキーマ自体は公開しない**。検証したい利用者は API の `openapi.json` から生成できる。
+- パッケージの**メジャーバージョンは API バージョンに追従する**（`1.x` ↔ `/api/v1`）。`/api/v2` を出すときに `2.0.0` を出す。
+
+```ts
+import type { StatusResponse, PeriodResponse, ResponseMeta } from '@mizunashi/api-types';
+```
+
+#### `@mizunashi/api-client`
+
+**「薄い」を守る。** 状態管理・キャッシュ戦略・UI 都合をここに入れない。
+
+```ts
+import { MizunashiClient } from '@mizunashi/api-client';
+
+const client = new MizunashiClient();
+// または new MizunashiClient({ baseUrl: 'https://…', fetch: customFetch })
+
+const status = await client.status();
+if (status.state === 'open') {
+  console.log(`${status.current.end} まで入浴できます`);
+}
+
+// 期間ビューは 4 種とも同じ形が返る
+const week = await client.week('today');
+const month = await client.month(2026, 7);
+```
+
+提供するもの:
+
+| 機能 | 内容 |
+| --- | --- |
+| 各エンドポイントのメソッド | `status` / `day` / `week` / `month` / `year` / `years` / `meta` |
+| `receivedAt` の付与 | クライアントの時計で受信時刻を記録する。`meta.servedAt` がキャッシュ由来で古い場合の基準になる（[§11.2](#112-すべてのレスポンスに含める-meta)） |
+| エラーの型付け | `problem+json` を `MizunashiApiError`（`type` / `status` / `detail` を保持）として投げる |
+| タイムアウトと中断 | `AbortSignal` を受け取る。既定 10 秒 |
+| 実行環境非依存 | 標準 `fetch` のみを使い、ブラウザ / Node / Workers / Deno で同じコードが動く |
+
+**含めないもの**: リトライのバックオフ戦略、永続キャッシュ、React フック、日時の書式整形。利用者ごとに要件が違い、薄さを壊すため。
+
+```ts
+export interface Received<T> {
+  data: T;
+  /** クライアント側の受信時刻。servedAt との差でキャッシュ経過が分かる */
+  receivedAt: string;
+  /** HTTP の Age ヘッダ（あれば） */
+  ageSeconds: number | null;
+}
+```
+
+#### 公開の仕組み（Trusted Publishing）
+
+**トークンを CI に置かない。** npm の Trusted Publishing（OIDC）で GitHub Actions から直接公開する。
+
+```yaml
+# .github/workflows/release.yml（概要）
+permissions:
+  id-token: write        # OIDC トークンの発行に必須
+  contents: write
+jobs:
+  release:
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, registry-url: 'https://registry.npmjs.org' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - run: pnpm --filter "@mizunashi/api-*" build
+      - run: pnpm changeset publish        # provenance 付きで公開
+```
+
+| 項目 | 方針 |
+| --- | --- |
+| 認証 | **Trusted Publishing (OIDC)**。`NPM_TOKEN` を発行しない・保存しない |
+| 事前設定 | npm の各パッケージ設定で、公開を許可するリポジトリとワークフローファイル名を登録しておく |
+| provenance | 自動で付与される。npm 上で「どのコミットから作られたか」が検証可能になる |
+| バージョニング | **Changesets**。PR に changeset を含め、マージ時にリリース PR が自動生成される |
+| アクセス | `--access public`（スコープ付きパッケージの既定は restricted のため明示が必要） |
+| CLI の制約 | Trusted Publishing には **npm CLI 11.5.1 以降**が要る。pnpm 側の対応状況を確認し、未対応なら該当パッケージのディレクトリで `npm publish` を直接実行する |
+
+**公開前に必ず `pnpm check` を通す。** 公開したバージョンは取り消せない（`npm unpublish` は 72 時間かつ依存があると不可）。
+
+#### 型が API とずれないようにする
+
+型定義とサーバ実装が乖離すると、公開パッケージが嘘をつくことになる。以下で防ぐ。
+
+- **`api-types` は Zod 定義から生成する。** 手書きしない。
+- **契約テスト**: API の統合テストで、実レスポンスを `packages/schema` の Zod で検証する（[§16](#16-テスト戦略)）。Zod が通れば生成された型とも一致する。
+- **公開物の型テスト**: 生成した `.d.ts` に対して、想定される利用コードが型検査を通ることを確認する（`tsd` 相当の型テスト）。
+- **CI で差分検出**: 生成物に差分が出たまま changeset が無い PR は落とす。「型が変わったのにバージョンが上がらない」を防ぐ。
 
 ---
 
@@ -4178,7 +4362,8 @@ catalog:
 - [ ] **期間ビュー共通基盤（`PeriodResponse` / `PeriodSummary` / `navigation`）**
 - [ ] **`/days/{date}`（いつまで / いつから）・`/weeks/{date}`・`/months/{yyyy-mm}`・`/years/{year}`**
 - [ ] `/years`（`activeYears` の公開）・`/meta`・`/status`
-- [ ] キャッシュ（`at=none` 静的経路 / 可変 TTL）/ ETag / problem+json / CORS
+- [ ] **すべてのレスポンスに `meta`（`servedAt` / `fetchedAt` / `dataAgeSeconds`）を付与**（§11.2）
+- [ ] キャッシュ（`at=none` のみ共有キャッシュ可 / `relative` 付きは `no-store`）/ ETag / problem+json / CORS
 - [ ] OpenAPI 定義生成
 - **完了条件**: 4 種の期間ビューが同形のレスポンスを返し、契約テストが通る
 
@@ -4195,6 +4380,16 @@ catalog:
 - [ ] `DayDetailDialog`
 - [ ] ダークモード / i18n / a11y 対応
 - **完了条件**: Playwright で「既定が今日・明日」「タブ切替」「月送りの範囲端 disabled」「来年データ有無での年切替 UI の出し分け」が検証できる
+
+### M4.5: npm パッケージの公開
+
+- [ ] `packages/api-types`: Zod 定義から `.d.ts` を生成するビルド
+- [ ] `packages/api-client`: 薄い fetch ラッパー + `receivedAt` の付与 + 型付きエラー
+- [ ] Changesets の導入
+- [ ] npm 側で Trusted Publishing（リポジトリとワークフローの登録）を設定
+- [ ] `release.yml`（OIDC・provenance 付き公開）
+- [ ] 型テストと契約テスト、生成物の差分検出
+- **完了条件**: `@mizunashi/api-types` と `@mizunashi/api-client` が provenance 付きで公開され、外部プロジェクトから型付きで叩ける
 
 ### M5: デプロイ・運用
 
@@ -4484,6 +4679,13 @@ WantedBy=timers.target
 - **補強**: `noUncheckedIndexedAccess` を有効にすることで、`sessions[0]` が `Session | undefined` となり、単一セッション前提のコードは**型レベルでも**エラーになる。
 - **トレードオフ**: `check-invariants.mjs` に残した分は正規表現ベースなので偽陽性・偽陰性がある。ルールを追加するときは、まず ESLint の `no-restricted-*` で表現できないかを検討する。
 
+### ADR-018: PDF はアーカイブするがパースしない
+
+- **状況**: 全年で PDF が併存する。機械可読ファイルが無かったのは 2014 / 2015 の 2 年のみで、2016 年以降は CSV → XLS → XLSX と形を変えつつ 11 年連続で提供されている（[§4.4.1](#441-発見されたファイル)）。
+- **決定**: v1 では PDF をパースしない。ただし原本としてアーカイブはする。機械可読ファイルが無い年は Critical アラートを出し、運用者が手動対応する。
+- **理由**: PDF の表抽出は誤読が起きやすく、**誤読は「入浴できると表示したのに実際は入れない」という利用者を現地で困らせる失敗**に直結する。読めないことより間違って読むことのほうが有害。
+- **緩和**: Reader を 1 つ足せば後から対応できる構造にしてある。手動対応の手順は `docs/OPERATIONS.md` に記載する。なお発生確率は低く（過去 11 年で 0 回）、非常弁という位置づけでよい。
+
 ### ADR-019: 差分判定をやめ、2 週間ごとに無条件で取得して作り直す
 
 - **状況**: 当初は「条件付き GET → 304 ならスキップ → sha256 が同じならスキップ → 変わっていればリビジョンを上げて再生成」という差分ベースの設計にしていた。ETag / `fetchedAt` / 前回ハッシュ / リビジョン番号という 4 種類の状態を持つ必要があった。
@@ -4503,12 +4705,27 @@ WantedBy=timers.target
 - **理由**: **ゴールデンテストの期待値そのものがチェックサムの役割を果たす。** 日数・セッション数分布・祝日件数・警告件数まで既知の値と突き合わせているため、ファイルが差し替われば必ず落ちる。sha256 を別途保持しても同じことを二重に検出するだけで、保守対象が 1 つ増える。
 - **前提**: フィクスチャは**過去のフォーマットを記録した参考資料**であり、本番サービスは一切参照しない。失っても運用に影響しない（[§16.2](#162-フォーマット変動に対するゴールデンテスト)）。
 
-### ADR-018: PDF はアーカイブするがパースしない
+### ADR-021: すべてのレスポンスに `meta` を付け、`relative` 付きは共有キャッシュしない
 
-- **状況**: 全年で PDF が併存する。機械可読ファイルが無かったのは 2014 / 2015 の 2 年のみで、2016 年以降は CSV → XLS → XLSX と形を変えつつ 11 年連続で提供されている（[§4.4.1](#441-発見されたファイル)）。
-- **決定**: v1 では PDF をパースしない。ただし原本としてアーカイブはする。機械可読ファイルが無い年は Critical アラートを出し、運用者が手動対応する。
-- **理由**: PDF の表抽出は誤読が起きやすく、**誤読は「入浴できると表示したのに実際は入れない」という利用者を現地で困らせる失敗**に直結する。読めないことより間違って読むことのほうが有害。
-- **緩和**: Reader を 1 つ足せば後から対応できる構造にしてある。手動対応の手順は `docs/OPERATIONS.md` に記載する。なお発生確率は低く（過去 11 年で 0 回）、非常弁という位置づけでよい。
+- **状況**: 「この情報がいつ時点のものか」を利用者が常に判断できるようにしたい。一方で `servedAt`（配信時刻）を含めると、キャッシュされたレスポンスが古い `servedAt` を返す矛盾が生じる。
+- **決定**:
+  1. エラーを含む全レスポンスに `meta`（`servedAt` / `fetchedAt` / `generatedAt` / `dataAgeSeconds` / `source`）を付ける。
+  2. **現在時刻に依存する値を含むレスポンスは共有キャッシュしない**（`Cache-Control: no-store`）。共有キャッシュを許すのは `at=none` の静的バリアントだけ。
+- **理由**: `servedAt` が古くなる問題は、実は `endsInSeconds` のような相対値が古くなる問題と同じものである。**相対値を含むレスポンスをキャッシュすること自体が誤り**であり、`servedAt` はその矛盾を可視化しただけ。切り分けの基準を「現在時刻に依存するか」に統一すれば、両方が同時に解決する。
+- **性能への影響**: Worker は API リクエストごとに必ず実行されるため、共有キャッシュを外しても KV 読み取り（数ミリ秒）で NFR-01 を満たせる。フロントは年次データを一度取得してクライアント側で計算するため（[ADR-005](#付録b-adr設計上の意思決定記録)）、そもそも API 呼び出しが少ない。
+- **残る曖昧さ**: `at=none` のレスポンスは最大 60 秒 `servedAt` が古くなりうる。標準の `Age` ヘッダで開示し、公式ラッパーは受信時刻を `receivedAt` として別に持つ。
+
+### ADR-022: 型とラッパーを別パッケージとして npm に公開する
+
+- **状況**: API を公開する以上、利用者が型を書き起こす手間をなくしたい。1 パッケージにまとめる案と分ける案があった。
+- **決定**: `@mizunashi/api-types`（型のみ・実行時依存ゼロ）と `@mizunashi/api-client`（薄い fetch ラッパー）に分ける。内部パッケージ（`schema` / `parser` / `core`）は公開しない。
+- **理由**:
+  1. **型だけ欲しい利用者に実行時コードを背負わせない。** 独自の HTTP クライアントを使う場合や型だけ参照したい場合に無駄がない。
+  2. **変更理由が異なる。** 型は API の契約、ラッパーは実装。同じバージョン軸に縛ると、ラッパーの修正で型のメジャーが動くような歪みが出る。
+  3. 公開範囲を API の契約面に絞ることで、内部実装（パーサのアダプタ構造など）を破壊的変更の対象にしなくて済む。
+- **型のずれ対策**: `api-types` は `packages/schema` の Zod 定義から**生成**する。手書きの二重管理をしない。加えて契約テスト（実レスポンスを Zod で検証）と、生成物に差分があるのに changeset が無い PR を落とす CI で担保する。
+- **公開方式**: Trusted Publishing（OIDC）。**`NPM_TOKEN` を発行も保存もしない。** provenance が自動で付き、どのコミット由来かを検証できる。
+
 
 ---
 

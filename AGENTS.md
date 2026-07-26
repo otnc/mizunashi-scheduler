@@ -74,6 +74,7 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 | `pnpm --filter api dev` | Worker をローカル起動（`wrangler dev --local`） |
 | `pnpm --filter web dev` | Astro をローカル起動 |
 | `pnpm parser:debug <file>` | パーサのアダプタ選択結果と Diagnostics を表示 |
+| `pnpm changeset` | 公開パッケージを変更したときに changeset を追加する |
 
 **コミット前に `pnpm check` を通す。** pre-commit フックは軽い整形しか行わないため、これはフックに任せず自分で走らせる。
 
@@ -132,7 +133,7 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 
 - 追加は最小限に留める。「便利だから」ではなく「無いと成立しないか」で判断する。
 - **Cloudflare Workers で動くことを確認する。** `node:` 依存があるものは原則採用しない。
-- **`packages/core` と `packages/parser` では `node:` インポートを禁止する。** Web 標準 API のみを使う。これは VPS 構成への移行可能性を担保するための制約（[DESIGN.md §5.3](./docs/DESIGN.md#53-レイヤ構成)）。
+- **`packages/core` / `packages/parser` / `packages/api-client` では `node:` インポートを禁止する。** Web 標準 API のみを使う。これは VPS 構成への移行可能性を担保するための制約（[DESIGN.md §5.3](./docs/DESIGN.md#53-レイヤ構成)）。
 - バージョンは `pnpm-workspace.yaml` の `catalog:` に登録し、各パッケージは `"catalog:"` で参照する。パッケージごとに異なるバージョンを直接書かない。
 
 ## 5. このプロジェクト固有の禁止事項
@@ -144,7 +145,7 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 | `getHours()` `getDate()` 等のローカル時刻 API | Workers は UTC で動くため JST 判定が壊れる（[§10.1](./docs/DESIGN.md#101-時刻の意味論)） | ESLint `no-restricted-properties` |
 | `timeZone` を省いた `toLocaleString` / `Intl` | 実行環境のタイムゾーンに依存する | ESLint `no-restricted-syntax` |
 | `sessions[0]` だけを扱う実装 | 1日に複数回あるのが常態（2021年版では 2 回以上が 253/365 日）。[§13.5](./docs/DESIGN.md#135-daytimeline-の描画仕様) の禁止事項 | ESLint `no-restricted-syntax` + `noUncheckedIndexedAccess` |
-| `packages/core` / `packages/parser` での `node:` インポート | プラットフォーム非依存を保つ（[§5.3](./docs/DESIGN.md#53-レイヤ構成)） | ESLint `no-restricted-imports` |
+| `packages/core` / `packages/parser` / `packages/api-client` での `node:` インポート | プラットフォーム非依存を保つ（[§5.3](./docs/DESIGN.md#53-レイヤ構成)） | ESLint `no-restricted-imports` |
 | `test/fixtures/` の実データをコミット | 函館市が公開した原本そのもので、再配布にあたる。`.gitignore` で除外済み | `check-invariants` |
 | `test/fixtures/` の編集・整形（改行正規化を含む） | 原本との同一性がゴールデンテストの前提 | ゴールデンテストの期待値 |
 | `raw/` 配下のオブジェクト削除 | 原本は永久保存。公式サイトから旧年版が消えるため、失うと復元不能（[ADR-006](./docs/DESIGN.md#付録b-adr設計上の意思決定記録) / ADR-009） | `check-invariants` |
@@ -153,6 +154,8 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 | ファイル名から対象年を推定する実装 | `R2.xlsx` の中身が 2021 年である実例がある（[§4.4.2](./docs/DESIGN.md#442-命名規則は当てにならない)） | レビュー |
 | 通年 365 日を前提にした処理 | 2020年版は 4〜12月の 275 日。会計年度ファイルも存在する | レビュー |
 | 公式サイトを叩くテスト | 相手方への負荷、CI の不安定化 | レビュー |
+| `meta` を含まない API レスポンス | 利用者が「いつ時点のデータか」を判断できなくなる（[§11.2](./docs/DESIGN.md#112-すべてのレスポンスに含める-meta)） | 契約テスト |
+| 現在時刻に依存する値を含むレスポンスの共有キャッシュ | 古い残り時間を返してしまう（[ADR-021](./docs/DESIGN.md#付録b-adr設計上の意思決定記録)） | レビュー |
 
 **これらのルールを `eslint-disable` で黙らせない。** 例外が必要な場面が本当にあるなら、`eslint.config.js` の `files` / `ignores` で範囲を明示し、理由をコメントに書く。
 
@@ -166,7 +169,18 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 - 新しいフォーマットに対応したら、**その実データを手元に置いてゴールデンテストを書き、取得元を `fixtures/README.md` に追記する**。アダプタだけ足してテストを書かないのは不可。
 - 境界時刻（`start` ちょうど / `end` ちょうど / その前後 1 秒）は必ずテストする。
 
-## 7. コミットメッセージ規約（Conventional Commits、日本語）
+## 7. npm 公開パッケージの規約
+
+`@mizunashi/api-types` と `@mizunashi/api-client` を npm に公開している（[DESIGN.md §11.8](./docs/DESIGN.md#118-npm-での型とラッパーの配信)）。**公開したバージョンは事実上取り消せない**ため、他より慎重に扱う。
+
+- **公開するのは API の契約面だけ。** `@mizunashi/schema` / `parser` / `core` は `private: true` を外さない。内部実装を破壊的変更の対象にしないため。
+- **`api-types` の型を手書きしない。** `packages/schema` の Zod 定義から生成する。生成物を直接編集した変更は却下する。
+- **公開パッケージを変更する PR には changeset を含める。** 生成物に差分があるのに changeset が無い PR は CI で落ちる。
+- **メジャーバージョンは API バージョンに追従する。** `1.x` ↔ `/api/v1`。API に破壊的変更を入れずにパッケージのメジャーを上げない。
+- **手元から `npm publish` しない。** 公開は GitHub Actions の Trusted Publishing (OIDC) からのみ行う。**`NPM_TOKEN` を発行も保存もしない。**
+- **`api-client` を厚くしない。** リトライ戦略・永続キャッシュ・React フック・日時整形は入れない。利用者ごとに要件が違い、薄さという価値を壊す。
+
+## 8. コミットメッセージ規約（Conventional Commits、日本語）
 
 書式:
 
@@ -207,7 +221,7 @@ chore(deps): eslint を 9.20 に更新
 - 無関係な作業を "wip" や "misc" のコミットにまとめない。
 - push も同じ小さな単位で行い、各ステップで CI が結果を返すようにする。
 
-## 8. ブランチ / PR
+## 9. ブランチ / PR
 
 - **`main` へ直接 push しない。** ブランチ名は `feat/…` `fix/…` `docs/…` `chore/…`。
 - マージには **CI 全緑**が必須。具体的には `.github/workflows/ci.yml` の `check` ジョブ（= `pnpm check`）が成功していること。内訳は以下のすべて。
@@ -226,7 +240,7 @@ chore(deps): eslint を 9.20 に更新
 - 設計変更を伴う PR は、DESIGN.md（必要なら ADR）の更新を**同じ PR に含める**。実装だけ先にマージしない。
 - レビューでは §5 の禁止事項を最優先で確認する。
 
-## 9. エージェント（Claude 等）向けの追加ルール
+## 10. エージェント（Claude 等）向けの追加ルール
 
 - **破壊的操作は事前確認なしに実行しない。** `git push --force`、`git reset --hard`、ブランチ削除、`rm -rf`、R2 / KV のオブジェクト削除が該当する。
 - **`main` に対して commit / push しない。** 作業を始める前にブランチを切る。
