@@ -1,6 +1,6 @@
 {
   "name": "mizunashi-scheduler",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "description": "函館市 水無海浜温泉の入浴可能時間を機械可読化する Web API とサイト（非公式）",
