@@ -74,7 +74,7 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 | `pnpm --filter api dev` | Worker をローカル起動（`wrangler dev --local`） |
 | `pnpm --filter web dev` | Astro をローカル起動 |
 | `pnpm parser:debug <file>` | パーサのアダプタ選択結果と Diagnostics を表示 |
-| `pnpm changeset` | 公開パッケージを変更したときに changeset を追加する |
+| `pnpm build` | 公開パッケージをビルドする（依存順に実行される）|
 
 **コミット前に `pnpm check` を通す。** pre-commit フックは軽い整形しか行わないため、これはフックに任せず自分で走らせる。
 
@@ -174,10 +174,11 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 `@mizunashi/api-types` と `@mizunashi/api-client` を npm に公開している（[DESIGN.md §11.8](./docs/DESIGN.md#118-npm-での型とラッパーの配信)）。**公開したバージョンは事実上取り消せない**ため、他より慎重に扱う。
 
 - **公開するのは API の契約面だけ。** `@mizunashi/schema` / `parser` / `core` は `private: true` を外さない。内部実装を破壊的変更の対象にしないため。
-- **`api-types` の型を手書きしない。** `packages/schema` の Zod 定義から生成する。生成物を直接編集した変更は却下する。
-- **公開パッケージを変更する PR には changeset を含める。** 生成物に差分があるのに changeset が無い PR は CI で落ちる。
+- **`api-types` の型を変えたら `packages/schema` の Zod 定義も揃える。** 両者の等価性はコンパイル時に検証されるので、片方だけ変えると `pnpm typecheck` が落ちる。落ちたら型を合わせるのであって、アサーションを消して黙らせない。
+- **公開は `package.json` のバージョンを上げてタグを打つ。** タグは `api-types-v1.2.3` / `api-client-v1.2.3` 形式。ワークフローがタグと `package.json` の一致を検証する。
 - **メジャーバージョンは API バージョンに追従する。** `1.x` ↔ `/api/v1`。API に破壊的変更を入れずにパッケージのメジャーを上げない。
 - **手元から `npm publish` しない。** 公開は GitHub Actions の Trusted Publishing (OIDC) からのみ行う。**`NPM_TOKEN` を発行も保存もしない。**
+- **`api-client` より先に `api-types` の該当バージョンを公開する。** 逆順に出すとインストールできないパッケージになる。ワークフローが `npm view` で確認する。
 - **`api-client` を厚くしない。** リトライ戦略・永続キャッシュ・React フック・日時整形は入れない。利用者ごとに要件が違い、薄さという価値を壊す。
 
 ## 8. コミットメッセージ規約（Conventional Commits、日本語）

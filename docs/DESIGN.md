@@ -596,8 +596,8 @@ mizunashi-scheduler/
 │       └── package.json
 ├── packages/
 │   ├── api-types/                 # ★npm 公開。レスポンス型のみ（実行時依存ゼロ）
-│   │   ├── src/generated.d.ts     #   schema の Zod 定義から生成する
-│   │   └── package.json
+│   │   ├── src/index.ts           #   手書き。Zod 定義との等価性をテストで検証
+│   │   └── test/contract.test.ts  #   コンパイル時の型等価アサーション
 │   ├── api-client/                # ★npm 公開。薄い fetch ラッパー
 │   ├── schema/                    # Zod スキーマ + 型（唯一の真実・非公開）
 │   ├── parser/                    # 形式判別 + アダプタ + 正規化（§8）
@@ -628,10 +628,10 @@ mizunashi-scheduler/
 │   └── check-invariants.mjs       # プロジェクト固有の不変条件チェック（§17.5）
 ├── .github/workflows/
 │   ├── ci.yml                     # lint / format / typecheck / test / invariants
+│   ├── release-types.yml          # @mizunashi/api-types の公開（§11.8）
+│   ├── release-client.yml         # @mizunashi/api-client の公開
 │   ├── deploy.yml
-│   ├── release.yml                # npm 公開（Trusted Publishing・§11.8）
 │   └── weekly.yml                 # knip / pnpm audit
-├── .changeset/                    # Changesets によるバージョン管理
 ├── .vscode/
 │   ├── extensions.json
 │   └── settings.json
@@ -2557,9 +2557,29 @@ API を機械可読にした以上、**利用者が型を書き起こさずに�
 
 #### `@mizunashi/api-types`
 
-- **Zod スキーマから型を導出して `.d.ts` として出力する。** 手書きの二重管理をしない。`packages/schema` の Zod 定義が唯一の情報源。
+- **実行時コードも依存も持たない。** `tsc --emitDeclarationOnly` で `.d.ts` だけを出力する。
 - 実行時依存を持たせないため、**Zod スキーマ自体は公開しない**。検証したい利用者は API の `openapi.json` から生成できる。
 - パッケージの**メジャーバージョンは API バージョンに追従する**（`1.x` ↔ `/api/v1`）。`/api/v2` を出すときに `2.0.0` を出す。
+
+**型の一致は生成ではなくコンパイル時アサーションで担保する。** 唯一の情報源は `packages/schema` の Zod 定義で、公開する型がそれと**型等価**であることを検証する。
+
+```ts
+type Equals<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+type Assert<T extends true> = T;
+
+export type Contracts = [
+  Assert<Equals<Api.StatusResponse, Zod.StatusResponse>>,
+  Assert<Equals<Api.PeriodResponse, Zod.PeriodResponse>>,
+  // …全 19 型
+];
+```
+
+**1 つでもずれた時点で `pnpm typecheck` が落ちる。** 生成器を使わない理由は 3 つ。
+
+1. **依存が増えない。** `zod-to-json-schema` + `json-schema-to-typescript` のような生成器を入れると、その出力品質と互換性に振り回される。
+2. **差分がレビューできる。** 生成物の差分ではなく、人が書いた型の差分としてレビューに乗る。
+3. **検出力は同じ。** 「ずれたら落ちる」という目的は等価アサーションで完全に達成される。生成はその一手段にすぎない。
 
 ```ts
 import type { StatusResponse, PeriodResponse, ResponseMeta } from '@mizunashi/api-types';
@@ -2611,32 +2631,38 @@ export interface Received<T> {
 
 **トークンを CI に置かない。** npm の Trusted Publishing（OIDC）で GitHub Actions から直接公開する。
 
+**ワークフローはパッケージごとに分ける。** Trusted Publishing の信頼先は「リポジトリ + ワークフローファイル名」で登録するため、1 ファイル 1 パッケージにすると対応が一意になる。
+
+| ワークフロー | 対象 | トリガ |
+| --- | --- | --- |
+| `.github/workflows/ci.yml` | 全体 | PR / main への push |
+| `.github/workflows/release-types.yml` | `@mizunashi/api-types` | タグ `api-types-v*` |
+| `.github/workflows/release-client.yml` | `@mizunashi/api-client` | タグ `api-client-v*` |
+
 ```yaml
-# .github/workflows/release.yml（概要）
 permissions:
-  id-token: write        # OIDC トークンの発行に必須
-  contents: write
-jobs:
-  release:
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, registry-url: 'https://registry.npmjs.org' }
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm check
-      - run: pnpm --filter "@mizunashi/api-*" build
-      - run: pnpm changeset publish        # provenance 付きで公開
+  contents: read
+  id-token: write            # OIDC トークンの発行に必須
+steps:
+  - run: pnpm install --frozen-lockfile
+  - run: pnpm check                                     # 公開前に全検証
+  - run: <タグと package.json のバージョン一致を確認>
+  - run: pnpm --filter @mizunashi/api-types build
+  - run: pnpm --filter @mizunashi/api-types pack --pack-destination "$RUNNER_TEMP"
+  - run: npm publish "$RUNNER_TEMP"/*.tgz --provenance --access public
 ```
+
+**`pnpm pack` してから `npm publish <tarball>` する理由。** モノレポの `workspace:^` 参照は npm CLI では解決できず、そのまま公開すると利用者がインストールできないパッケージになる。一方 Trusted Publishing の OIDC は npm CLI 側の機能である。`pnpm pack` は tarball 内の `package.json` で `workspace:^` を実際のバージョン（`^0.1.0`）へ書き換えるため、**その tarball を npm CLI で公開すれば両方の要件を満たせる。**
 
 | 項目 | 方針 |
 | --- | --- |
 | 認証 | **Trusted Publishing (OIDC)**。`NPM_TOKEN` を発行しない・保存しない |
-| 事前設定 | npm の各パッケージ設定で、公開を許可するリポジトリとワークフローファイル名を登録しておく |
-| provenance | 自動で付与される。npm 上で「どのコミットから作られたか」が検証可能になる |
-| バージョニング | **Changesets**。PR に changeset を含め、マージ時にリリース PR が自動生成される |
-| アクセス | `--access public`（スコープ付きパッケージの既定は restricted のため明示が必要） |
-| CLI の制約 | Trusted Publishing には **npm CLI 11.5.1 以降**が要る。pnpm 側の対応状況を確認し、未対応なら該当パッケージのディレクトリで `npm publish` を直接実行する |
+| 事前設定 | npm の各パッケージ設定で、リポジトリと**ワークフローファイル名**を登録する |
+| provenance | `--provenance`。npm 上で「どのコミットから作られたか」が検証可能になる |
+| バージョニング | `package.json` を手で上げ、`api-types-v1.2.3` 形式のタグを打つ。**ワークフローがタグと `package.json` の一致を検証**し、食い違えば公開しない |
+| アクセス | `--access public`（スコープ付きの既定は restricted のため明示が必要） |
+| CLI の制約 | Trusted Publishing には **npm CLI 11.5.1 以降**が要る。ワークフローで `npm install -g npm@latest` してから公開する |
+| 依存の順序 | `api-client` の公開時に、依存する `api-types` が**既に npm に存在するか** `npm view` で確認する。未公開のまま出すとインストール不能になる |
 
 **公開前に必ず `pnpm check` を通す。** 公開したバージョンは取り消せない（`npm unpublish` は 72 時間かつ依存があると不可）。
 
@@ -2644,10 +2670,9 @@ jobs:
 
 型定義とサーバ実装が乖離すると、公開パッケージが嘘をつくことになる。以下で防ぐ。
 
-- **`api-types` は Zod 定義から生成する。** 手書きしない。
-- **契約テスト**: API の統合テストで、実レスポンスを `packages/schema` の Zod で検証する（[§16](#16-テスト戦略)）。Zod が通れば生成された型とも一致する。
-- **公開物の型テスト**: 生成した `.d.ts` に対して、想定される利用コードが型検査を通ることを確認する（`tsd` 相当の型テスト）。
-- **CI で差分検出**: 生成物に差分が出たまま changeset が無い PR は落とす。「型が変わったのにバージョンが上がらない」を防ぐ。
+- **コンパイル時の等価アサーション**: 公開する型と Zod 定義がずれた時点で `pnpm typecheck` が落ちる。
+- **契約テスト**: API の統合テストで、実レスポンスを `packages/schema` の Zod で検証する（[§16](#16-テスト戦略)）。Zod が通れば公開型とも一致する。
+- **タグとバージョンの一致検証**: リリースワークフローが `package.json` と食い違うタグでの公開を拒否する。
 
 ---
 
@@ -4387,10 +4412,9 @@ catalog:
 
 - [ ] `packages/api-types`: Zod 定義から `.d.ts` を生成するビルド
 - [ ] `packages/api-client`: 薄い fetch ラッパー + `receivedAt` の付与 + 型付きエラー
-- [ ] Changesets の導入
-- [ ] npm 側で Trusted Publishing（リポジトリとワークフローの登録）を設定
-- [ ] `release.yml`（OIDC・provenance 付き公開）
-- [ ] 型テストと契約テスト、生成物の差分検出
+- [ ] npm 側で Trusted Publishing（リポジトリとワークフローファイル名の登録）を設定
+- [ ] `release-types.yml` / `release-client.yml`（OIDC・provenance 付き公開）
+- [ ] コンパイル時の型等価アサーションと契約テスト
 - **完了条件**: `@mizunashi/api-types` と `@mizunashi/api-client` が provenance 付きで公開され、外部プロジェクトから型付きで叩ける
 
 ### M5: デプロイ・運用
@@ -4725,7 +4749,7 @@ WantedBy=timers.target
   1. **型だけ欲しい利用者に実行時コードを背負わせない。** 独自の HTTP クライアントを使う場合や型だけ参照したい場合に無駄がない。
   2. **変更理由が異なる。** 型は API の契約、ラッパーは実装。同じバージョン軸に縛ると、ラッパーの修正で型のメジャーが動くような歪みが出る。
   3. 公開範囲を API の契約面に絞ることで、内部実装（パーサのアダプタ構造など）を破壊的変更の対象にしなくて済む。
-- **型のずれ対策**: `api-types` は `packages/schema` の Zod 定義から**生成**する。手書きの二重管理をしない。加えて契約テスト（実レスポンスを Zod で検証）と、生成物に差分があるのに changeset が無い PR を落とす CI で担保する。
+- **型のずれ対策**: `packages/schema` の Zod 定義を唯一の情報源とし、公開する型がそれと**型等価であることをコンパイル時にアサートする**。ずれた時点で `pnpm typecheck` が落ちる。生成器を入れないのは、依存を増やさず差分をレビュー可能に保つため。加えて契約テスト（実レスポンスを Zod で検証）で担保する。
 - **公開方式**: Trusted Publishing（OIDC）。**`NPM_TOKEN` を発行も保存もしない。** provenance が自動で付き、どのコミット由来かを検証できる。
 
 
