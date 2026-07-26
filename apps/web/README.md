@@ -38,6 +38,10 @@ StatusHero                いま入れるか / いつまで / 次はいつから
 
 **状態は色だけで示しません。** アイコンと文言を必ず併記します。カウントダウンは `aria-live="polite"` です。
 
+**外部リンクは必ず [`ExternalLink.astro`](src/components/astro/ExternalLink.astro) を通します。** 直接 `<a href="https://...">` と書くと `target` と `rel` の付け忘れが起きます。`target="_blank"` に `rel="noopener"` を付け忘れると、遷移先から `window.opener` 経由でこちらのタブを操作されえます。別タブで開くことは `↗` と読み上げ用テキストの両方で伝えます。この規約は `pnpm check:invariants` で強制しています。
+
+地図は Google マップの埋め込みです。`loading="lazy"` を付けているので、スクロールして近づくまで読み込まれません。
+
 ## ローカル開発
 
 ```bash

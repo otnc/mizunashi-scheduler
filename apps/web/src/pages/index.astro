@@ -1,6 +1,7 @@
 ---
 import BaseLayout from '../layouts/BaseLayout.astro';
 import WaveWarning from '../components/astro/WaveWarning.astro';
+import AccessMap from '../components/astro/AccessMap.astro';
 import SiteFooter from '../components/astro/SiteFooter.astro';
 import { ScheduleApp } from '../components/react/ScheduleApp';
 ---
@@ -21,6 +22,10 @@ import { ScheduleApp } from '../components/react/ScheduleApp';
 
     <div class="mt-6">
       <WaveWarning />
+    </div>
+
+    <div class="mt-8">
+      <AccessMap />
     </div>
 
     <SiteFooter />

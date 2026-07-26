@@ -1,0 +1,33 @@
+---
+import ExternalLink from './ExternalLink.astro';
+
+/** apps/api/src/facility.ts の FACILITY と同じ */
+const PLACE_NAME = '水無海浜温泉';
+const ADDRESS = '北海道函館市恵山岬町';
+
+const EMBED_SRC =
+  'https://www.google.com/maps/embed?pb=!1m18!1m12!1m3!1d2973.797145770705!2d141.1817769757849!3d41.81113016960494!2m3!1f0!2f0!3f0!3m2!1i1024!2i768!4f13.1!3m3!1m2!1s0x5f9e6f6a01197fd5%3A0xbe13c4b1fc990dc4!2z5rC054Sh5rW35rWc5rip5rOJ!5e0!3m2!1sja!2sjp!4v1785065288595!5m2!1sja!2sjp';
+
+/** 埋め込みと同じ地点。施設名で検索させると別の場所に解決しうるので座標で指定する */
+const MAP_URL = 'https://www.google.com/maps/search/?api=1&query=41.81113,141.181777';
+---
+
+<section aria-labelledby="access-heading">
+  <h2 id="access-heading" class="text-base font-semibold">アクセス</h2>
+  <p class="mt-1 text-sm text-muted-foreground">{ADDRESS}</p>
+
+  <!-- 幅は親に追従させ、高さは比率で決める。iframe の width/height 属性では横にはみ出す -->
+  <div class="mt-3 aspect-4/3 overflow-hidden rounded-lg border border-border sm:aspect-video">
+    <iframe
+      src={EMBED_SRC}
+      title={`${PLACE_NAME}の地図`}
+      class="h-full w-full border-0"
+      loading="lazy"
+      referrerpolicy="strict-origin-when-cross-origin"
+      allowfullscreen></iframe>
+  </div>
+
+  <p class="mt-2 text-sm">
+    <ExternalLink href={MAP_URL} class="underline">Google マップで開く</ExternalLink>
+  </p>
+</section>

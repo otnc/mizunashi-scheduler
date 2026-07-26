@@ -28,6 +28,14 @@ const RULES = [
     pattern: /\b20(2[6-9]|3\d)\b/,
     message: '年のハードコード禁止。activeYears を実行時に取得すること（FR-10 / ADR-011）',
   },
+  {
+    id: 'external-link-component',
+    kind: 'content',
+    include: /^apps\/web\/src\/.+\.(tsx|astro)$/,
+    pattern: /<a\s[^>]*href=["']https?:\/\//,
+    message:
+      '外部リンクは ExternalLink コンポーネントを使うこと。個別に書くと target と rel の付け忘れが起きる',
+  },
 ];
 
 /**

@@ -1,4 +1,6 @@
 ---
+import ExternalLink from './ExternalLink.astro';
+
 const PAGE_URL = 'https://www.city.hakodate.hokkaido.jp/docs/2014041800107/';
 const REPO_URL = 'https://github.com/otnc/mizunashi-scheduler';
 const COPYRIGHT_YEAR = 2026; // invariant-ok(no-hardcoded-year): 著作権表示の年。時間表のデータ年ではない
@@ -10,7 +12,7 @@ const COPYRIGHT_YEAR = 2026; // invariant-ok(no-hardcoded-year): 著作権表示
     <strong>非公式</strong>の情報提供サービスです。
   </p>
   <p class="mt-2">
-    出典: <a class="underline" href={PAGE_URL} rel="noreferrer">函館市公式ホームページ</a>
+    出典: <ExternalLink href={PAGE_URL} class="underline">函館市公式ホームページ</ExternalLink>
   </p>
   <p class="mt-2">
     入浴可能時間はあくまで潮位表に基づく目安です。荒天や高波などの気象状況により、
@@ -23,7 +25,7 @@ const COPYRIGHT_YEAR = 2026; // invariant-ok(no-hardcoded-year): 著作権表示
   </p>
 
   <div class="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
-    <a class="underline" href={REPO_URL} rel="noreferrer">GitHub リポジトリ</a>
+    <ExternalLink href={REPO_URL} class="underline">GitHub リポジトリ</ExternalLink>
     <small>{COPYRIGHT_YEAR} &copy; otoneko.</small>
   </div>
 </footer>

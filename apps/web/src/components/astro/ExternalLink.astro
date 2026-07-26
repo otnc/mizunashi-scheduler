@@ -1,0 +1,22 @@
+---
+/**
+ * 外部サイトへのリンク。別タブで開く。
+ *
+ * target="_blank" には rel="noopener" が必須。付け忘れると遷移先から
+ * window.opener 経由でこちらのタブを操作されうる。
+ * 個別に属性を書くと必ず抜けるので、外部リンクはすべてこれを通す。
+ *
+ * 別タブで開くことは見た目（↗）と読み上げ（sr-only）の両方で伝える。
+ */
+interface Props {
+  href: string;
+  class?: string;
+}
+const { href, class: className } = Astro.props;
+---
+
+<a href={href} target="_blank" rel="noopener noreferrer" class={className}>
+  <slot /><span aria-hidden="true" class="ml-0.5 text-xs">↗</span><span class="sr-only"
+    >（新しいタブで開きます）</span
+  >
+</a>
