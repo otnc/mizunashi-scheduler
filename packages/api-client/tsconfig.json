@@ -4,5 +4,5 @@
     "lib": ["ES2022", "DOM"],
     "paths": { "@mizunashi/api-types": ["../api-types/src/index.ts"] }
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "tsup.config.ts"]
 }

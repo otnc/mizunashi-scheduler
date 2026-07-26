@@ -4,16 +4,28 @@
   "description": "水無海浜温泉 入浴可能時間 API のレスポンス型定義（非公式）",
   "license": "MIT",
   "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "files": [
     "dist"
   ],
   "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/otnc/mizunashi-scheduler.git",
@@ -31,13 +43,17 @@
     "access": "public",
     "provenance": true
   },
+  "author": "otoneko.",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsup",
+    "verify:package": "publint --strict",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "devDependencies": {
     "@mizunashi/schema": "workspace:*",
+    "publint": "catalog:",
+    "tsup": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"
   }

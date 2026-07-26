@@ -6,6 +6,13 @@
  * test/contract.test.ts のコンパイル時アサーションで担保している。
  */
 
+/**
+ * このパッケージが対応する API バージョン。
+ * 型だけでは実行時に互換性を確かめられないため、値としても公開する。
+ */
+export const API_VERSION = 'v1';
+export const SCHEMA_VERSION = 1;
+
 /** "HH:mm" (JST) */
 export type TimeStr = string;
 /** "YYYY-MM-DD" */

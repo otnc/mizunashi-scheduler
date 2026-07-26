@@ -595,10 +595,10 @@ mizunashi-scheduler/
 │       ├── astro.config.mjs
 │       └── package.json
 ├── packages/
-│   ├── api-types/                 # ★npm 公開。レスポンス型のみ（実行時依存ゼロ）
+│   ├── api-types/                 # ★npm 公開。レスポンス型（依存ゼロ・CJS/ESM 両対応）
 │   │   ├── src/index.ts           #   手書き。Zod 定義との等価性をテストで検証
 │   │   └── test/contract.test.ts  #   コンパイル時の型等価アサーション
-│   ├── api-client/                # ★npm 公開。薄い fetch ラッパー
+│   ├── api-client/                # ★npm 公開。薄い fetch ラッパー（CJS/ESM 両対応）
 │   ├── schema/                    # Zod スキーマ + 型（唯一の真実・非公開）
 │   ├── parser/                    # 形式判別 + アダプタ + 正規化（§8）
 │   │   └── src/
@@ -625,7 +625,8 @@ mizunashi-scheduler/
 │           └── fixtures/          # 実データ本体は追跡しない（再配布回避）
 │               └── README.md                 # 取得元と各ファイルの位置づけ
 ├── scripts/
-│   └── check-invariants.mjs       # プロジェクト固有の不変条件チェック（§17.5）
+│   ├── check-invariants.mjs       # プロジェクト固有の不変条件チェック（§17.5）
+│   └── verify-dist.mjs            # 公開パッケージの CJS/ESM 実測検証（§11.8）
 ├── .github/workflows/
 │   ├── ci.yml                     # lint / format / typecheck / test / invariants
 │   ├── release-types.yml          # @mizunashi/api-types の公開（§11.8）
@@ -2545,8 +2546,36 @@ API を機械可読にした以上、**利用者が型を書き起こさずに�
 
 | パッケージ | 内容 | 依存 |
 | --- | --- | --- |
-| **`@mizunashi/api-types`** | レスポンスの TypeScript 型定義のみ | **ゼロ**（`.d.ts` のみ・実行時コードなし） |
-| **`@mizunashi/api-client`** | 薄い fetch ラッパー | `@mizunashi/api-types`（型のみ） |
+| **`@mizunashi/api-types`** | レスポンスの型定義 + `API_VERSION` / `SCHEMA_VERSION` | **ゼロ** |
+| **`@mizunashi/api-client`** | 薄い fetch ラッパー | `@mizunashi/api-types` |
+
+#### CJS / ESM の両対応
+
+**両方の形式で配信する。** 利用者の環境を選ばないため、また `moduleResolution: node16` 以降では **CJS 側が `.d.cts` を見に行く**ため、型定義も両方用意しないと解決できない利用者が出る。
+
+```
+dist/index.js     ESM
+dist/index.cjs    CJS
+dist/index.d.ts   ESM 用の型
+dist/index.d.cts  CJS 用の型
+```
+
+```jsonc
+"exports": {
+  ".": {
+    "import": { "types": "./dist/index.d.ts",  "default": "./dist/index.js" },
+    "require": { "types": "./dist/index.d.cts", "default": "./dist/index.cjs" }
+  }
+}
+```
+
+ビルドは **tsup**。`tsc` だけで両形式を出そうとすると 2 回のビルドと拡張子の付け替えが要り、壊れやすい。tsup は `format: ['esm','cjs']` + `dts: true` の 1 設定で `.d.cts` まで出力する。
+
+**`api-types` も型だけでなく `API_VERSION` / `SCHEMA_VERSION` を値として公開する。** 型だけでは実行時に互換性を確かめられないため。副次的に、実行時エントリを持つ通常のデュアルパッケージになり、パッケージ検証ツールが扱いやすくなる。
+
+**検証**: `publint --strict`（exports の構成が正しいか）と `scripts/verify-dist.mjs`（exports が指すファイルの実在、CJS の `require` と ESM の `import` が実際に成功するか）を、リリースワークフローの公開前に実行する。
+
+> `@arethetypeswrong/cli` の採用も試したが、同梱している TypeScript が古く（v5.6 系）本プロジェクトの出力を解析できずクラッシュしたため見送った。代わりに実際の読み込みを行う自前スクリプトで担保している。静的解析より弱い部分はあるが、外部ツールの版ずれで CI が壊れるリスクがない。
 
 内部パッケージ（`@mizunashi/schema` / `parser` / `core`）は `private: true` のまま公開しない。**公開するのは API の契約面だけ**に絞る。
 
@@ -2557,7 +2586,7 @@ API を機械可読にした以上、**利用者が型を書き起こさずに�
 
 #### `@mizunashi/api-types`
 
-- **実行時コードも依存も持たない。** `tsc --emitDeclarationOnly` で `.d.ts` だけを出力する。
+- **依存はゼロ。** 実行時に持つのは `API_VERSION` / `SCHEMA_VERSION` の 2 つの定数だけ。
 - 実行時依存を持たせないため、**Zod スキーマ自体は公開しない**。検証したい利用者は API の `openapi.json` から生成できる。
 - パッケージの**メジャーバージョンは API バージョンに追従する**（`1.x` ↔ `/api/v1`）。`/api/v2` を出すときに `2.0.0` を出す。
 
@@ -4410,8 +4439,9 @@ catalog:
 
 ### M4.5: npm パッケージの公開
 
-- [ ] `packages/api-types`: Zod 定義から `.d.ts` を生成するビルド
+- [ ] `packages/api-types`: 型定義 + CJS/ESM 両対応ビルド（tsup）
 - [ ] `packages/api-client`: 薄い fetch ラッパー + `receivedAt` の付与 + 型付きエラー
+- [ ] `publint` と `scripts/verify-dist.mjs` による公開前検証
 - [ ] npm 側で Trusted Publishing（リポジトリとワークフローファイル名の登録）を設定
 - [ ] `release-types.yml` / `release-client.yml`（OIDC・provenance 付き公開）
 - [ ] コンパイル時の型等価アサーションと契約テスト

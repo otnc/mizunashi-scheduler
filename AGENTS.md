@@ -75,6 +75,7 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 | `pnpm --filter web dev` | Astro をローカル起動 |
 | `pnpm parser:debug <file>` | パーサのアダプタ選択結果と Diagnostics を表示 |
 | `pnpm build` | 公開パッケージをビルドする（依存順に実行される）|
+| `pnpm verify:dist` | 公開パッケージの CJS/ESM 両対応を実測で検証する |
 
 **コミット前に `pnpm check` を通す。** pre-commit フックは軽い整形しか行わないため、これはフックに任せず自分で走らせる。
 
@@ -179,6 +180,8 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 - **メジャーバージョンは API バージョンに追従する。** `1.x` ↔ `/api/v1`。API に破壊的変更を入れずにパッケージのメジャーを上げない。
 - **手元から `npm publish` しない。** 公開は GitHub Actions の Trusted Publishing (OIDC) からのみ行う。**`NPM_TOKEN` を発行も保存もしない。**
 - **`api-client` より先に `api-types` の該当バージョンを公開する。** 逆順に出すとインストールできないパッケージになる。ワークフローが `npm view` で確認する。
+- **公開パッケージは CJS / ESM の両方を出す。** `exports` の `import` / `require` それぞれに `types` を付ける。CJS 利用者は `.d.cts` を見に行くため、片方だけだと型が解決できない。
+- **`pnpm verify:dist` を通してから公開する。** exports が指すファイルの実在と、両形式からの読み込みを実測する。
 - **`api-client` を厚くしない。** リトライ戦略・永続キャッシュ・React フック・日時整形は入れない。利用者ごとに要件が違い、薄さという価値を壊す。
 
 ## 8. コミットメッセージ規約（Conventional Commits、日本語）

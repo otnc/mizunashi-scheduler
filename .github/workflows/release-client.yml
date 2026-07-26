@@ -57,6 +57,10 @@ jobs:
           DEP_VERSION="$(node -p "require('./packages/api-types/package.json').version")"
           npm view "@mizunashi/api-types@$DEP_VERSION" version
 
+      # exports が指すファイルの実在と、CJS / ESM 双方からの読み込みを実測する
+      - name: Verify package
+        run: pnpm verify:dist
+
       - name: Pack
         run: pnpm --filter @mizunashi/api-client pack --pack-destination "$RUNNER_TEMP"
 

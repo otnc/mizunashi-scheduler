@@ -50,6 +50,10 @@ jobs:
       - name: Build
         run: pnpm --filter @mizunashi/api-types build
 
+      # exports が指すファイルの実在と、CJS / ESM 双方からの読み込みを実測する
+      - name: Verify package
+        run: pnpm verify:dist
+
       # pnpm pack は workspace: プロトコルを実際のバージョンに書き換える。
       # 生成した tarball を npm CLI で公開することで、OIDC と provenance を使いつつ
       # ワークスペース参照も正しく解決される。
