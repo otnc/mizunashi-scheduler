@@ -272,6 +272,32 @@ describe('エラー', () => {
   });
 });
 
+describe('/calendar.ics', () => {
+  it('iCalendar を返す', async () => {
+    const res = await get('/api/v1/calendar.ics');
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toContain('text/calendar');
+    const body = await res.text();
+    expect(body).toContain('BEGIN:VCALENDAR');
+    expect(body).toContain('TZID:Asia/Tokyo');
+    // 1/5 は 2 回あるので VEVENT は 32 件（30日×1 + 1日×2）
+    expect(body.match(/BEGIN:VEVENT/g)).toHaveLength(32);
+  });
+
+  it('alarm を指定すると VALARM が付く', async () => {
+    const body = await (await get('/api/v1/calendar.ics?alarm=30')).text();
+    expect(body).toContain('TRIGGER:-PT30M');
+  });
+
+  it('提供対象外の年は 404', async () => {
+    expect((await get('/api/v1/calendar.ics?year=2020')).status).toBe(404);
+  });
+
+  it('alarm が範囲外なら 400', async () => {
+    expect((await get('/api/v1/calendar.ics?alarm=9999')).status).toBe(400);
+  });
+});
+
 describe('/healthz', () => {
   it('当年データがあれば ok', async () => {
     const body = (await (await get('/api/v1/healthz')).json()) as { status: string };

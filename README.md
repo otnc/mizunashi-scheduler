@@ -74,6 +74,7 @@ pnpm check          # lint / format / typecheck / test / 不変条件
 | ファイル | 内容 |
 | --- | --- |
 | [docs/DESIGN.md](./docs/DESIGN.md) | 設計・仕様・判断根拠（ADR） |
+| [docs/OPERATIONS.md](./docs/OPERATIONS.md) | 障害対応と定型作業の手順 |
 | [AGENTS.md](./AGENTS.md) | 開発・運用の規約 |
 
 調査の詳細（12 年分のフォーマット変動、実在するデータ欠陥）は DESIGN.md §4.4 にあります。

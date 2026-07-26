@@ -4,6 +4,7 @@ import type { MetaResponse, YearsResponse } from '@mizunashi/api-types';
 import {
   activeYears,
   addDays,
+  buildIcs,
   calendarGrid,
   daysInMonth,
   jstDateKey,
@@ -320,6 +321,44 @@ export function createApp(deps: Deps, admin?: AdminDeps): Hono {
       at,
       lang: parseLang(c.req.query('lang')),
     });
+  });
+
+  app.get('/api/v1/calendar.ics', async (c) => {
+    const now = deps.now();
+    const data = await loadData(deps);
+
+    const yearParam = c.req.query('year');
+    const years = yearParam == null ? data.years.map((y) => y.year) : [Number(yearParam)];
+    if (years.some((y) => !Number.isInteger(y))) {
+      throw new ApiProblem('invalid-parameter', `年として解釈できません: ${String(yearParam)}`);
+    }
+
+    const alarmRaw = c.req.query('alarm');
+    const alarm = alarmRaw == null ? null : Number(alarmRaw);
+    if (alarm != null && (!Number.isInteger(alarm) || alarm < 0 || alarm > 1440)) {
+      throw new ApiProblem('invalid-parameter', 'alarm は 0〜1440 の整数で指定してください');
+    }
+
+    const days = data.years.filter((y) => years.includes(y.year)).flatMap((y) => y.days);
+    if (days.length === 0) {
+      throw new ApiProblem('year-not-available', '該当する年のデータがありません');
+    }
+
+    const lang = parseLang(c.req.query('lang'));
+    const body = buildIcs(days, {
+      calendarName: lang === 'en' ? 'Mizunashi Kaihin Onsen' : '水無海浜温泉 入浴可能時間',
+      domain: new URL(deps.baseUrl).host,
+      alarmMinutes: alarm,
+      lang,
+      location: '北海道函館市恵山岬町',
+      url: deps.baseUrl,
+      now,
+    });
+
+    c.header('content-type', 'text/calendar; charset=utf-8');
+    c.header('content-disposition', 'inline; filename="mizunashi.ics"');
+    c.header('cache-control', 'public, max-age=3600, s-maxage=21600');
+    return c.body(body);
   });
 
   app.get('/api/v1/meta', async (c) => {

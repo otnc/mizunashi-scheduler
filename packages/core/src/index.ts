@@ -3,6 +3,7 @@ export * from './status/jst.js';
 export * from './status/calendar.js';
 export * from './status/compute.js';
 export * from './period/index.js';
+export * from './ics.js';
 export * from './ingest/archive.js';
 export * from './ingest/derived.js';
 export * from './ingest/discover.js';
