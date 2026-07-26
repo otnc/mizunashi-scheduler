@@ -11,8 +11,9 @@ export default tseslint.config(
       '**/node_modules/**',
       '**/worker-configuration.d.ts',
       'packages/core/test/fixtures/**',
-      // 設定ファイル自身は tsconfig の include 外なので型情報付き lint の対象にしない
+      // tsconfig の include 外にあるため型情報付き lint の対象にできない
       'eslint.config.js',
+      'scripts/**',
     ],
   },
 
