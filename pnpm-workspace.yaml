@@ -2,12 +2,18 @@ packages:
   - 'packages/*'
   - 'apps/*'
 
-# vitest が使う esbuild のみビルドスクリプトを許可する
+# ビルドスクリプトの実行を許可する依存を明示する
 allowBuilds:
+  # vitest が使う
   esbuild: true
+  # wrangler が使う Workers ランタイム。ローカルの Miniflare 実行に必要
+  workerd: true
+  # wrangler の依存。この用途では使わないが postinstall を止めると install が失敗する
+  sharp: true
 
 # 依存バージョンはここで一元管理し、各パッケージは "catalog:" で参照する（AGENTS.md §4）
 catalog:
+  '@cloudflare/workers-types': ^4.20241230.0
   '@eslint/js': ^9.17.0
   '@types/node': ^22.10.0
   eslint: ^9.17.0
@@ -21,4 +27,5 @@ catalog:
   typescript: ^5.7.2
   typescript-eslint: ^8.18.0
   vitest: ^2.1.8
+  wrangler: ^3.99.0
   zod: ^3.24.1

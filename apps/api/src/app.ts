@@ -17,6 +17,8 @@ import { ApiProblem } from './errors.js';
 import { buildMeta } from './meta.js';
 import { buildPeriodResponse, buildStatusResponse } from './responses.js';
 import { FACILITY } from './facility.js';
+import { archiveRoutes } from './routes/archive.js';
+import { adminRoutes, type AdminDeps } from './routes/admin.js';
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MONTH_RE = /^(\d{4})-(\d{2})$/;
@@ -69,10 +71,14 @@ function coversAny(data: LoadedData, range: PeriodRange): boolean {
   return c != null && range.from <= c.to && range.to >= c.from;
 }
 
-export function createApp(deps: Deps): Hono {
+export function createApp(deps: Deps, admin?: AdminDeps): Hono {
   const app = new Hono();
 
   app.use('/api/*', cors({ origin: '*', allowMethods: ['GET', 'OPTIONS'] }));
+
+  // 管理系は CORS を許可しない。認証を通す経路をブラウザから叩かせる必要がない
+  if (admin != null) app.route('/', adminRoutes(admin));
+  app.route('/', archiveRoutes(deps));
 
   app.onError((err, c) => {
     const now = deps.now();

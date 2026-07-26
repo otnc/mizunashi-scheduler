@@ -1,0 +1,26 @@
+name = "mizunashi"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+
+[triggers]
+# 通常は 2 週間ごと。11〜1 月は翌年版の公開時期なので日次にする（DESIGN.md §7.2）
+crons = ["15 17 1,15 * *", "15 17 * 11,12,1 *"]
+
+[[r2_buckets]]
+binding = "ARCHIVE"
+bucket_name = "mizunashi-archive"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+
+[vars]
+PAGE_URL = "https://www.city.hakodate.hokkaido.jp/docs/2014041800107/"
+PUBLIC_BASE_URL = "https://mizunashi.example.com"
+USER_AGENT = "mizunashi-scheduler/1.0 (+https://mizunashi.example.com/about)"
+
+[observability]
+enabled = true
+
+# secrets は wrangler secret put で設定する（値をここに書かない）
+#   ADMIN_TOKEN
