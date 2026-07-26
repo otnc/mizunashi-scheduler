@@ -1,0 +1,24 @@
+# テキストは LF に正規化する（AGENTS.md §3）。Windows でも working tree を LF に保ち、
+# Prettier の endOfLine: "lf" と衝突させない。
+* text=auto eol=lf
+
+# フィクスチャの実データは変換しない。CSV は Shift_JIS でレコード区切りの CRLF と
+# セル内改行の LF が混在しており、正規化すると原本と別物になる。
+# 通常は .gitignore 対象だが add -f 時の保険。README/CHECKSUMS は通常のテキスト扱い。
+packages/core/test/fixtures/*.xlsx -text -diff
+packages/core/test/fixtures/*.csv -text -diff
+
+*.xlsx binary
+*.xlsm binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+pnpm-lock.yaml -diff linguist-generated
+*.sh text eol=lf

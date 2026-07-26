@@ -1,0 +1,60 @@
+# 依存関係
+node_modules/
+.pnpm-store/
+
+# ビルド成果物
+dist/
+build/
+.astro/
+.output/
+
+# Cloudflare / Wrangler
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+worker-configuration.d.ts
+
+# 環境変数
+.env
+.env.*
+!.env.example
+
+# キャッシュ
+.turbo/
+.eslintcache
+*.tsbuildinfo
+.vite/
+.cache/
+
+# テスト
+coverage/
+test-results/
+playwright-report/
+blob-report/
+
+# ログ
+logs/
+*.log
+
+# エディタ / OS
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ローカル作業用
+/tmp/
+/scratch/
+*.local
+
+# テストフィクスチャは函館市が公開した原本そのもの。再配布を避けるため追跡しない。
+# 取得は pnpm fixtures:fetch、同一性の検証は CHECKSUMS.txt で行う。
+packages/core/test/fixtures/*
+!packages/core/test/fixtures/README.md
+!packages/core/test/fixtures/CHECKSUMS.txt
