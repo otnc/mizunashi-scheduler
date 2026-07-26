@@ -1,0 +1,64 @@
+name: Release @mizunashi/api-client
+
+# release-types.yml と同じ構成。Trusted Publishing の信頼先が
+# ワークフローファイル単位で登録されるため、パッケージごとに分けている。
+on:
+  push:
+    tags: ['api-client-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest && npm --version
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify
+        run: pnpm check
+
+      - name: Verify tag matches package version
+        if: github.event_name == 'push'
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#api-client-v}"
+          PKG_VERSION="$(node -p "require('./packages/api-client/package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "タグ ($TAG_VERSION) と package.json ($PKG_VERSION) のバージョンが一致しません" >&2
+            exit 1
+          fi
+
+      # api-types に依存するため、先にビルドして型を解決できるようにする
+      - name: Build
+        run: |
+          pnpm --filter @mizunashi/api-types build
+          pnpm --filter @mizunashi/api-client build
+
+      # 依存の @mizunashi/api-types が npm に公開済みであることを確認する。
+      # 未公開のまま公開すると、利用者がインストールできないパッケージになる
+      - name: Verify dependency is published
+        run: |
+          DEP_VERSION="$(node -p "require('./packages/api-types/package.json').version")"
+          npm view "@mizunashi/api-types@$DEP_VERSION" version
+
+      - name: Pack
+        run: pnpm --filter @mizunashi/api-client pack --pack-destination "$RUNNER_TEMP"
+
+      - name: Publish
+        run: npm publish "$RUNNER_TEMP"/mizunashi-api-client-*.tgz --provenance --access public

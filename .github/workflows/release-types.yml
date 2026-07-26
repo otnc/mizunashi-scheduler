@@ -1,0 +1,60 @@
+name: Release @mizunashi/api-types
+
+# タグで公開する。パッケージごとにワークフローを分けているのは、npm の
+# Trusted Publishing が「リポジトリ + ワークフローファイル名」で信頼先を
+# 登録する仕組みだから。1 ファイル 1 パッケージにすると対応が一意になる。
+on:
+  push:
+    tags: ['api-types-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # OIDC トークンの発行に必須
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: 'https://registry.npmjs.org'
+
+      # Trusted Publishing には npm CLI 11.5.1 以降が要る
+      - name: Ensure npm supports trusted publishing
+        run: npm install -g npm@latest && npm --version
+
+      - run: pnpm install --frozen-lockfile
+
+      # 公開したバージョンは取り消せない。先に全検証を通す（AGENTS.md §7）
+      - name: Verify
+        run: pnpm check
+
+      - name: Verify tag matches package version
+        if: github.event_name == 'push'
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#api-types-v}"
+          PKG_VERSION="$(node -p "require('./packages/api-types/package.json').version")"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "タグ ($TAG_VERSION) と package.json ($PKG_VERSION) のバージョンが一致しません" >&2
+            exit 1
+          fi
+
+      - name: Build
+        run: pnpm --filter @mizunashi/api-types build
+
+      # pnpm pack は workspace: プロトコルを実際のバージョンに書き換える。
+      # 生成した tarball を npm CLI で公開することで、OIDC と provenance を使いつつ
+      # ワークスペース参照も正しく解決される。
+      - name: Pack
+        run: pnpm --filter @mizunashi/api-types pack --pack-destination "$RUNNER_TEMP"
+
+      - name: Publish
+        run: npm publish "$RUNNER_TEMP"/mizunashi-api-types-*.tgz --provenance --access public
