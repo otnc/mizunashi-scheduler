@@ -8,7 +8,7 @@ import type {
 
 export type * from '@mizunashi/api-types';
 
-export const DEFAULT_BASE_URL = 'https://mizunashi.example.com';
+export const DEFAULT_BASE_URL = 'https://mizunashi.otnc.dev';
 const DEFAULT_TIMEOUT_MS = 10_000;
 
 export interface ClientOptions {

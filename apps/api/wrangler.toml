@@ -2,6 +2,17 @@ name = "mizunashi"
 main = "src/index.ts"
 compatibility_date = "2026-01-01"
 
+# API と静的サイトを同一オリジンで配信する（ADR-002）。
+# CORS のプリフライトが発生せず、ドメインもデプロイも 1 つで済む。
+routes = [{ pattern = "mizunashi.otnc.dev", custom_domain = true }]
+
+[assets]
+directory = "../web/dist"
+binding = "ASSETS"
+not_found_handling = "404-page"
+# これらは必ず Worker が処理する。静的アセットに先を譲らない
+run_worker_first = ["/api/*", "/archive/*"]
+
 [triggers]
 # 通常は 2 週間ごと。11〜1 月は翌年版の公開時期なので日次にする（DESIGN.md §7.2）
 crons = ["15 17 1,15 * *", "15 17 * 11,12,1 *"]
@@ -12,12 +23,14 @@ bucket_name = "mizunashi-archive"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "b3261c8b9a0342df9957fa42a808c586"
 
 [vars]
 PAGE_URL = "https://www.city.hakodate.hokkaido.jp/docs/2014041800107/"
-PUBLIC_BASE_URL = "https://mizunashi.example.com"
-USER_AGENT = "mizunashi-scheduler/1.0 (+https://mizunashi.example.com/about)"
+PUBLIC_BASE_URL = "https://mizunashi.otnc.dev"
+USER_AGENT = "mizunashi-scheduler/1.0 (+https://mizunashi.otnc.dev/)"
+# 原本配信は既定でオフ。有効化すると R2 への外部トラフィックが発生しうる
+ARCHIVE_PUBLIC = "false"
 
 [observability]
 enabled = true
