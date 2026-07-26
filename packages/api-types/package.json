@@ -1,6 +1,6 @@
 {
   "name": "@mizunashi/api-types",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "水無海浜温泉 入浴可能時間 API のレスポンス型定義（非公式）",
   "license": "MIT",
   "type": "module",
