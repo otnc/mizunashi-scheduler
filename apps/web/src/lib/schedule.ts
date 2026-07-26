@@ -15,8 +15,7 @@ export interface ScheduleData {
 }
 
 /** API のオリジン。同一オリジン配信が既定なので通常は空文字（DESIGN.md ADR-002） */
-const API_BASE: string =
-  typeof import.meta.env.PUBLIC_API_BASE === 'string' ? import.meta.env.PUBLIC_API_BASE : '';
+const API_BASE: string = import.meta.env.PUBLIC_API_BASE ?? '';
 
 async function getJson<T>(path: string, signal?: AbortSignal): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
