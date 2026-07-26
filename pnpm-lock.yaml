@@ -18,6 +18,9 @@ catalogs:
     '@eslint/js':
       specifier: ^9.17.0
       version: 9.39.5
+    '@hono/swagger-ui':
+      specifier: ^0.6.1
+      version: 0.6.1
     '@tailwindcss/vite':
       specifier: ^4.0.0
       version: 4.3.3
@@ -81,6 +84,9 @@ catalogs:
     zod:
       specifier: ^3.24.1
       version: 3.25.76
+    zod-to-json-schema:
+      specifier: ^3.24.1
+      version: 3.25.2
 
 importers:
 
@@ -113,6 +119,9 @@ importers:
 
   apps/api:
     dependencies:
+      '@hono/swagger-ui':
+        specifier: 'catalog:'
+        version: 0.6.1(hono@4.12.32)
       '@mizunashi/api-types':
         specifier: workspace:*
         version: link:../../packages/api-types
@@ -125,6 +134,12 @@ importers:
       hono:
         specifier: 'catalog:'
         version: 4.12.32
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+      zod-to-json-schema:
+        specifier: 'catalog:'
+        version: 3.25.2(zod@3.25.76)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
@@ -1132,6 +1147,11 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@hono/swagger-ui@0.6.1':
+    resolution: {integrity: sha512-sJTvldu1GPeEPfyeLG7gRj+W4vEuD+JDi+JjJ3TJs/DvMUtBLs0KJO5yokGegWWdy5qrbdnQGekbhgNRmPmYKQ==}
+    peerDependencies:
+      hono: '>=4.0.0'
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -4560,6 +4580,10 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
+
+  '@hono/swagger-ui@0.6.1(hono@4.12.32)':
+    dependencies:
+      hono: 4.12.32
 
   '@humanfs/core@0.19.2':
     dependencies:

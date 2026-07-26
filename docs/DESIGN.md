@@ -2096,7 +2096,8 @@ export interface ResponseMeta {
 | GET | `/api/v1/years` | 提供中の年の一覧（今年 + 来年） | 5m / CDN 1h |
 | GET | `/api/v1/meta` | 出典・取得日時・注意書き・施設情報 | 5m / CDN 1h |
 | GET | `/api/v1/calendar.ics` | iCalendar フィード | 1h / CDN 6h |
-| GET | `/api/v1/openapi.json` | OpenAPI 3.1 定義 | 1d |
+| GET | `/api/v1/openapi.json` | OpenAPI 3.0.3 定義 | 1h / CDN 24h |
+| GET | `/api/v1/docs` | Swagger UI | 1h / CDN 24h |
 | GET | `/api/v1/healthz` | ヘルスチェック | no-store |
 | GET | `/archive` | アーカイブ済み原本の一覧（過去年含む）**既定で無効** | 1h |
 | GET | `/archive/{year}/{filename}` | アーカイブ済み原本のダウンロード **既定で無効** | immutable / 1y |
@@ -2715,6 +2716,16 @@ steps:
 - **コンパイル時の等価アサーション**: 公開する型と Zod 定義がずれた時点で `pnpm typecheck` が落ちる。
 - **契約テスト**: API の統合テストで、実レスポンスを `packages/schema` の Zod で検証する（[§16](#16-テスト戦略)）。Zod が通れば公開型とも一致する。
 - **バージョンの単一情報源**: タグはリリースワークフロー自身が `package.json` から作るので、両者がずれた状態はそもそも作れない。
+
+### 11.9 OpenAPI ドキュメント
+
+`GET /api/v1/openapi.json`（OpenAPI 3.0.3）と `GET /api/v1/docs`（Swagger UI）を提供する。
+
+**`components.schemas` は `packages/schema` の Zod 定義から `zod-to-json-schema` で生成する。** 手で書き写すと実装とドキュメントが食い違いうるため、`@mizunashi/api-types` と同じく唯一の情報源（Zod）から導出する。パス・パラメータ・エンドポイントの説明（`apps/api/src/openapi/document.ts`）は手で書く。ルーティング自体を `@hono/zod-openapi` に載せ替えることはしていない。既存の素朴な Hono ルーティング（ADR-011 の設計）を変えてまで得るものではなく、ドキュメント生成だけを後付けできる方が変更が小さい。
+
+**バージョンは 3.1 ではなく 3.0.3 にした。** 3.1 は JSON Schema 2020-12 をそのまま使えて表現力は高いが、Swagger UI を含む多くのツールがまだ 3.0 系を前提にしており、実用上の互換性を優先した。
+
+**`zod-to-json-schema` を使った実装には既知の癖がある。** 変換対象のスキーマ自身を `definitions` にも含めると、中身を展開せず自分自身への `$ref` だけを返す。しかも一度どこかで参照済みとして記録されたスキーマは、以後そのスキーマを単独で変換しても `$ref` のまま返る（ライブラリ内部の解決状態がスキーマ側に残るため）。このため実装では、実際に使う入力とは無関係なプレースホルダを渡し、公開したい全スキーマを `definitions` 経由で 1 回の呼び出しにまとめている。`apps/api/test/openapi.test.ts` に「文書内のすべての `$ref` が実際に解決できる」ことを検証する回帰テストを置き、この種の実装ミスを機械的に検出する。
 
 ---
 
@@ -4466,7 +4477,7 @@ catalog:
 - [ ] `/years`（`activeYears` の公開）・`/meta`・`/status`
 - [ ] **すべてのレスポンスに `meta`（`servedAt` / `fetchedAt` / `dataAgeSeconds`）を付与**（§11.2）
 - [ ] キャッシュ（`at=none` のみ共有キャッシュ可 / `relative` 付きは `no-store`）/ ETag / problem+json / CORS
-- [ ] OpenAPI 定義生成
+- [x] OpenAPI 定義生成（[§11.9](#119-openapi-ドキュメント)）
 - **完了条件**: 4 種の期間ビューが同形のレスポンスを返し、契約テストが通る
 
 ### M4: フロントエンド

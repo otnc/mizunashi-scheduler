@@ -16,6 +16,9 @@ Cloudflare Workers 上の API です。Hono で構成し、静的サイトと同
 | GET | `/api/v1/days?from=&to=` | 任意期間（最大 400 日） |
 | GET | `/api/v1/years` | 提供中の年の一覧 |
 | GET | `/api/v1/meta` | 施設情報・出典 |
+| GET | `/api/v1/calendar.ics` | iCalendar フィード |
+| GET | `/api/v1/openapi.json` | OpenAPI 3.0.3 定義 |
+| GET | `/api/v1/docs` | Swagger UI |
 | GET | `/api/v1/healthz` | ヘルスチェック |
 | GET | `/archive` | 原本の一覧（既定で無効） |
 | GET | `/archive/{year}/{file}` | 原本のダウンロード（既定で無効） |
@@ -28,6 +31,12 @@ Cloudflare Workers 上の API です。Hono で構成し、静的サイトと同
 原本は R2 に保管し続けますが、公開すると大量ダウンロードが R2 の課金につながりうるため、既定では配信しません。有効化する場合は `wrangler.toml` の `ARCHIVE_PUBLIC` を `"true"` にしたうえで、`/archive/*` にレートリミットをかけてください。現在の設定は `/api/v1/healthz` の `checks.archivePublic` で確認できます。
 
 **期間ビュー 4 種は同じ形を返します。** `scope` と `range` だけが違うので、クライアントは 1 つのレンダラで扱えます。
+
+## API ドキュメント
+
+`/api/v1/openapi.json`（OpenAPI 3.0.3）を `/api/v1/docs`（Swagger UI）で見られます。
+
+`components.schemas` は [`packages/schema`](../../packages/schema) の Zod 定義から [`zod-to-json-schema`](https://github.com/StefanTerdell/zod-to-json-schema) で生成しています（[`src/openapi/schemas.ts`](./src/openapi/schemas.ts)）。手で書き写すと実装とドキュメントが食い違いうるため、`@mizunashi/api-types` と同じく唯一の情報源（Zod）から導出しています。パス・パラメータの説明（[`src/openapi/document.ts`](./src/openapi/document.ts)）は手で書いています。
 
 ## 共通のパラメータ
 

@@ -9,10 +9,13 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@hono/swagger-ui": "catalog:",
     "@mizunashi/api-types": "workspace:*",
     "@mizunashi/core": "workspace:*",
     "@mizunashi/schema": "workspace:*",
-    "hono": "catalog:"
+    "hono": "catalog:",
+    "zod": "catalog:",
+    "zod-to-json-schema": "catalog:"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "catalog:",

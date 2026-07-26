@@ -1,5 +1,6 @@
 import { Hono, type Context } from 'hono';
 import { cors } from 'hono/cors';
+import { swaggerUI } from '@hono/swagger-ui';
 import type { MetaResponse, YearsResponse } from '@mizunashi/api-types';
 import {
   activeYears,
@@ -18,6 +19,7 @@ import { ApiProblem } from './errors.js';
 import { buildMeta } from './meta.js';
 import { buildPeriodResponse, buildStatusResponse } from './responses.js';
 import { FACILITY } from './facility.js';
+import { buildOpenApiDocument } from './openapi/document.js';
 import { archiveRoutes } from './routes/archive.js';
 import { adminRoutes, type AdminDeps } from './routes/admin.js';
 
@@ -393,6 +395,18 @@ export function createApp(deps: Deps, admin?: AdminDeps): Hono {
     };
     c.header('cache-control', 'public, max-age=300, s-maxage=3600');
     return c.json(body);
+  });
+
+  // 現在時刻に依存しないので静的レスポンスとして扱う
+  app.get('/api/v1/openapi.json', (c) => {
+    c.header('cache-control', STATIC_CACHE);
+    return c.json(buildOpenApiDocument(deps.baseUrl));
+  });
+
+  // ページ自体も静的なので openapi.json と同じキャッシュ方針にする
+  app.get('/api/v1/docs', (c, next) => {
+    c.header('cache-control', STATIC_CACHE);
+    return swaggerUI({ url: '/api/v1/openapi.json' })(c, next);
   });
 
   function respondPeriod(
