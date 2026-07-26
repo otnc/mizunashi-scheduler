@@ -10,6 +10,14 @@
 
 さらに**旧年度のファイルは公式サイトから削除されます**（2024 / 2025 年版がいずれも 404 であることを実測で確認）。取得した原本は永久保存し、失われないようにします。
 
+## リンク
+
+| | URL |
+| --- | --- |
+| サイト | https://mizunashi.otnc.dev |
+| API ドキュメント（Swagger UI） | https://mizunashi.otnc.dev/api/v1/docs |
+| OpenAPI 定義 | https://mizunashi.otnc.dev/api/v1/openapi.json |
+
 ## 構成
 
 ```
