@@ -1,0 +1,48 @@
+{
+  "name": "@mizunashi/api-client",
+  "version": "0.1.0",
+  "description": "水無海浜温泉 入浴可能時間 API の薄いクライアント（非公式）",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/otnc/mizunashi-scheduler.git",
+    "directory": "packages/api-client"
+  },
+  "homepage": "https://github.com/otnc/mizunashi-scheduler#readme",
+  "keywords": [
+    "mizunashi",
+    "hakodate",
+    "onsen",
+    "api",
+    "client"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@mizunashi/api-types": "workspace:^"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

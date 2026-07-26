@@ -1,0 +1,44 @@
+{
+  "name": "@mizunashi/api-types",
+  "version": "0.1.0",
+  "description": "水無海浜温泉 入浴可能時間 API のレスポンス型定義（非公式）",
+  "license": "MIT",
+  "type": "module",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/otnc/mizunashi-scheduler.git",
+    "directory": "packages/api-types"
+  },
+  "homepage": "https://github.com/otnc/mizunashi-scheduler#readme",
+  "keywords": [
+    "mizunashi",
+    "hakodate",
+    "onsen",
+    "api",
+    "types"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@mizunashi/schema": "workspace:*",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
