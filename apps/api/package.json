@@ -1,0 +1,21 @@
+{
+  "name": "@mizunashi/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@mizunashi/api-types": "workspace:*",
+    "@mizunashi/core": "workspace:*",
+    "@mizunashi/schema": "workspace:*",
+    "hono": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}
