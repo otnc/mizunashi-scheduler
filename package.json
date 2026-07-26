@@ -19,6 +19,7 @@
     "test": "pnpm -r test",
     "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm check:invariants",
     "check:invariants": "node scripts/check-invariants.mjs",
+    "gen:icons": "node scripts/gen-icons.mjs",
     "verify:dist": "pnpm build && pnpm -r --filter \"@mizunashi/api-*\" verify:package && node scripts/verify-dist.mjs"
   },
   "devDependencies": {

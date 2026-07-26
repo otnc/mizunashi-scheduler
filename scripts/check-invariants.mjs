@@ -30,6 +30,14 @@ const RULES = [
   },
 ];
 
+/**
+ * 行末に invariant-ok(ルールID) と理由を書くとその行だけ除外する。
+ * ルール自体を緩めると検出力が落ちるので、例外は理由込みでコードに残す。
+ */
+function allowed(text, ruleId) {
+  return new RegExp(`invariant-ok\\(${ruleId}\\)`).test(text);
+}
+
 function trackedFiles() {
   return execFileSync('git', ['ls-files'], { encoding: 'utf8' })
     .split('\n')
@@ -58,7 +66,8 @@ for (const rule of RULES) {
       continue;
     }
     content.split('\n').forEach((text, i) => {
-      if (rule.pattern.test(text)) violations.push({ rule, file, line: i + 1, text: text.trim() });
+      if (!rule.pattern.test(text) || allowed(text, rule.id)) return;
+      violations.push({ rule, file, line: i + 1, text: text.trim() });
     });
   }
 }

@@ -22,11 +22,37 @@ const TABS: { id: Tab; label: string }[] = [
 /** 30 秒ごとに再計算する。1 秒ごとだと読み上げが洪水になる（NFR-06） */
 const TICK_MS = 30_000;
 
+/**
+ * オフラインでも判定は端末側の時計と保存済みの年間データで正しく行える。
+ * 古い判定結果を見せているわけではないので、その旨だけ伝えて機能は止めない。
+ */
+function useOnline(): boolean {
+  // ビルド時のプリレンダリングでは navigator がない
+  const [online, setOnline] = useState(() =>
+    typeof navigator === 'undefined' ? true : navigator.onLine,
+  );
+
+  useEffect(() => {
+    const update = (): void => {
+      setOnline(navigator.onLine);
+    };
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    return () => {
+      window.removeEventListener('online', update);
+      window.removeEventListener('offline', update);
+    };
+  }, []);
+
+  return online;
+}
+
 export function ScheduleApp() {
   const [data, setData] = useState<ScheduleData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [now, setNow] = useState(() => new Date());
   const [tab, setTab] = useState<Tab>('today');
+  const online = useOnline();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -55,7 +81,9 @@ export function ScheduleApp() {
   if (error != null) {
     return (
       <p className="rounded-lg border border-border bg-card p-4 text-sm text-muted-foreground">
-        データを取得できませんでした。時間をおいて再度お試しください。
+        {online
+          ? 'データを取得できませんでした。時間をおいて再度お試しください。'
+          : 'オフラインで、保存済みの時間表もありません。通信できる場所で一度開いてください。'}
       </p>
     );
   }
@@ -74,6 +102,12 @@ export function ScheduleApp() {
 
   return (
     <div className="space-y-6">
+      {!online && (
+        <p className="rounded-lg border border-border bg-muted p-3 text-sm" role="status">
+          オフラインです。保存済みの時間表をもとに、端末の時計で判定しています。
+        </p>
+      )}
+
       <section
         className={`rounded-lg border-2 p-5 sm:p-6 ${toneClass}`}
         aria-live="polite"

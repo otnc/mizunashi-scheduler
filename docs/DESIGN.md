@@ -117,9 +117,9 @@
 | FR-11 | 当日の全セッションをタイムラインで可視化する | Must |
 | FR-12 | 「高波時は入浴不可」の公式注意書きを常時掲出する | Must |
 | FR-13 | 祝日名（日本語 / 英語）を表示する | Should |
-| FR-14 | 日本語 / 英語の 2 言語対応（原本が日英併記のため） | Should |
+| FR-14 | ~~日本語 / 英語の 2 言語対応~~ **スコープ外**。API は `lang` を受けるが、サイトは日本語のみ | Won't |
 | FR-15 | 上記すべてを JSON API として公開する | Must |
-| FR-16 | iCalendar (.ics) フィードを提供する | Could |
+| FR-16 | iCalendar (.ics) フィードを提供する（API のみ。サイトに購読ボタンは置かない） | Could |
 | FR-17 | データの出典・取得日時を明示する | Must |
 
 #### データ取得・保持
@@ -2745,7 +2745,7 @@ steps:
 | パス | 内容 |
 | --- | --- |
 | `/` | メイン（日本語）。今の状態 + **今日と明日**（既定） + 週間 / 月間タブ |
-| `/en/` | 英語版 |
+| ~~`/en/`~~ | 英語版。**作らない**（FR-14 スコープ外） |
 | `/calendar/` | カレンダー専用ページ（月間カレンダーを大きく表示、年月切替） |
 | `/about` | このサイトについて・出典・免責・データ保持方針 |
 | `/archive` | アーカイブ済み原本の一覧とダウンロード（**過去年も含む**）。既定で無効 |
@@ -3045,11 +3045,34 @@ export interface ApiClient {
 - `font-display: swap`、日本語フォントは**システムフォント**を使用（Web フォントを読ませない）
 - 画像（現地写真）は `astro:assets` で AVIF/WebP 生成 + `loading="lazy"`
 
-### 12.10 PWA（v1.1 候補）
+### 12.10 PWA
 
-- `manifest.webmanifest` + Service Worker（`@vite-pwa/astro`）
-- 年次データをキャッシュ → **圏外でも当日・週間・月間の入浴時間が見られる**（現地の電波状況を考えると価値が高い）
-- **通知機能は実装しない**（スコープ外）。オフライン閲覧のみを目的とする
+恵山岬は電波が不安定になりうる。現地で「いま入れるか」を確認できることに価値があるため、オフライン動作を実装する。
+
+**キャッシュするのは 2 つだけ。**
+
+| 対象 | 戦略 | 理由 |
+| --- | --- | --- |
+| アプリシェル（HTML / CSS / JS / アイコン） | ナビゲーションは network-first、`/_astro/*` は cache-first | 生成物は内容ハッシュ付きなので名前が変われば別物。取り違えが起きない |
+| `/api/v1/years`、`/api/v1/years/{year}?at=none` | stale-while-revalidate | `at=none` の静的バリアントで現在時刻に依存しない。年 1 回しか変わらない |
+
+**現在時刻に依存する API（`/status` など）はキャッシュしない。** そもそもサイトはそれらを呼ばない。年間データを取得したあとの判定は端末側で `computeStatus` を実行するため（[§12.6](#126-状態計算はクライアントで行う)）、**オフラインでも古い答えではなく正しい答えが出る**。これは「入れるか」を扱う以上ゆずれない性質で、判定結果そのものをキャッシュする設計だと満たせない。
+
+**ビルド時のプリキャッシュ一覧は作らない。** 生成物名に内容ハッシュが付くため、実行時にキャッシュするだけで十分であり、ビルドと SW の間に同期すべき状態を作らずに済む。`@vite-pwa/astro` を入れなかったのはこのため。
+
+オフライン時は UI にその旨を表示する。ただし機能は止めない。判定は正しいので、止める理由がない。
+
+**通知機能は実装しない**（スコープ外）。
+
+#### アイコン
+
+`scripts/gen-icons.mjs` が PNG 各サイズと `favicon.svg` を生成する。
+
+- 図形は単位正方形上の定数として 1 か所に定義し、SVG とラスタの両方をそこから出す。2 つの表現を手で書くと必ずずれるため
+- 色は `global.css` と同じ oklch 値を sRGB に変換して使う。ブランド色の情報源を 1 つに保つため
+- ラスタライザに依存しない（`node:zlib` で PNG を直接書く）。アイコンのためだけにネイティブ依存を増やさない
+
+生成物は `apps/web/public/` にコミットする。ビルドを 1 段増やすより、決定的な生成物を置くほうが単純なため。
 
 ---
 
@@ -3173,7 +3196,7 @@ shadcn/ui の `new-york` スタイルを土台に、**「海と温泉」のア�
 | `card` | StatusHero / SessionCard / FacilityInfoCard |
 | `badge` | 状態バッジ、祝日バッジ |
 | `alert` | 高波注意書き、翌年データ未公開の告知 |
-| `button` | 言語切替、ics 購読、カレンダー月送り |
+| `button` | カレンダー月送り、週送り、タブ切替 |
 | `tabs` | **ScheduleTabs**（今日・明日 / 週間 / 月間）。既定値は `today` |
 | `table` | 週間ビューのリスト、月間のテキスト版タイムライン |
 | `skeleton` | データ取得中のプレースホルダ |
@@ -4439,27 +4462,29 @@ catalog:
 
 ### M4.5: npm パッケージの公開
 
-- [ ] `packages/api-types`: 型定義 + CJS/ESM 両対応ビルド（tsup）
-- [ ] `packages/api-client`: 薄い fetch ラッパー + `receivedAt` の付与 + 型付きエラー
-- [ ] `publint` と `scripts/verify-dist.mjs` による公開前検証
+- [x] `packages/api-types`: 型定義 + CJS/ESM 両対応ビルド（tsup）
+- [x] `packages/api-client`: 薄い fetch ラッパー + `receivedAt` の付与 + 型付きエラー
+- [x] `publint` と `scripts/verify-dist.mjs` による公開前検証
 - [ ] npm 側で Trusted Publishing（リポジトリとワークフローファイル名の登録）を設定
-- [ ] `release-types.yml` / `release-client.yml`（OIDC・provenance 付き公開）
-- [ ] コンパイル時の型等価アサーションと契約テスト
+- [x] `release-types.yml` / `release-client.yml`（OIDC・provenance 付き公開）
+- [x] コンパイル時の型等価アサーションと契約テスト
 - **完了条件**: `@mizunashi/api-types` と `@mizunashi/api-client` が provenance 付きで公開され、外部プロジェクトから型付きで叩ける
 
 ### M5: デプロイ・運用
 
-- [ ] Cloudflare リソース作成、`wrangler.toml` 確定
-- [ ] 独自ドメイン + Cache Rules + WAF レート制限
-- [ ] GitHub Actions（CI / デプロイ / 日次スナップショット / スモーク）
+- [x] Cloudflare リソース作成（R2 `mizunashi-archive` / KV）、`wrangler.toml` 確定
+- [x] 独自ドメイン `mizunashi.otnc.dev`
+- [ ] Cache Rules + WAF レート制限（原本配信を既定オフにしたため優先度は下がった・[ADR-023](#adr-023-原本ファイルの配信は既定でオフにする)）
+- [x] GitHub Actions（CI / デプロイ）
 - [ ] アラート Webhook
-- [ ] `docs/OPERATIONS.md` / `docs/API.md`
+- [x] `docs/OPERATIONS.md`
+- [ ] `docs/API.md`
 - **完了条件**: 本番 URL で動作し、Cron が日次で走っていることをログで確認できる
 
 ### M6（v1.1 以降の候補）
 
-- [ ] iCalendar フィード
-- [ ] PWA / オフライン対応（現地の電波状況を考えると価値が高い。**通知は含まない**）
+- [x] iCalendar フィード（API のみ。サイトの購読ボタンは作らない）
+- [x] PWA / オフライン対応（現地の電波状況を考えると価値が高い。**通知は含まない**）
 - [ ] リビジョン差分の公開
 - [ ] 気象庁の波浪・気象警報 API を併記（**判定には使わず参考表示に留める**）
 - [ ] 恵山周辺の他施設（水無海浜温泉キャンプ場など）情報の統合

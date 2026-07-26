@@ -1,5 +1,7 @@
 ---
 const PAGE_URL = 'https://www.city.hakodate.hokkaido.jp/docs/2014041800107/';
+const REPO_URL = 'https://github.com/otnc/mizunashi-scheduler';
+const COPYRIGHT_YEAR = 2026; // invariant-ok(no-hardcoded-year): 著作権表示の年。時間表のデータ年ではない
 ---
 
 <footer class="mt-12 border-t border-border pt-6 text-sm text-muted-foreground">
@@ -19,4 +21,9 @@ const PAGE_URL = 'https://www.city.hakodate.hokkaido.jp/docs/2014041800107/';
     提供している時間表は今年と来年（公開され次第）のみです。過去年の原本ファイルは
     保管していますが、公開はしていません。
   </p>
+
+  <div class="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-border pt-4">
+    <a class="underline" href={REPO_URL} rel="noreferrer">GitHub リポジトリ</a>
+    <small>{COPYRIGHT_YEAR} &copy; otoneko.</small>
+  </div>
 </footer>

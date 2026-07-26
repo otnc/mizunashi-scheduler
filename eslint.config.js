@@ -86,6 +86,15 @@ export default tseslint.config(
     },
   },
 
+  // Service Worker は tsconfig の外（public 配下）にあるので型情報なしで lint する
+  {
+    files: ['apps/web/public/**/*.js'],
+    extends: [tseslint.configs.disableTypeChecked],
+    languageOptions: {
+      globals: { self: 'readonly' },
+    },
+  },
+
   {
     files: ['**/*.test.ts', '**/*.test.tsx', '**/test/**', 'scripts/**'],
     rules: {

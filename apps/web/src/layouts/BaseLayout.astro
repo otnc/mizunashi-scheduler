@@ -17,7 +17,28 @@ const { title, description } = Astro.props;
     <meta name="description" content={description} />
     <meta property="og:title" content={title} />
     <meta property="og:description" content={description} />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="/icon-512.png" />
     <link rel="alternate" hreflang="ja" href="/" />
+
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- global.css の --background と同じ色。scripts/gen-icons.mjs で oklch から変換した値 -->
+    <meta name="theme-color" content="#fcfeff" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0a1016" media="(prefers-color-scheme: dark)" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="水無海浜温泉" />
+
+    <script>
+      // updateViaCache: 'none' にしないと sw.js 自体が HTTP キャッシュから読まれ、更新が遅れる
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          void navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
+        });
+      }
+    </script>
   </head>
   <body class="min-h-screen">
     <slot />
