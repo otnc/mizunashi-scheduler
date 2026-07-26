@@ -17,9 +17,15 @@ Cloudflare Workers 上の API です。Hono で構成し、静的サイトと同
 | GET | `/api/v1/years` | 提供中の年の一覧 |
 | GET | `/api/v1/meta` | 施設情報・出典 |
 | GET | `/api/v1/healthz` | ヘルスチェック |
-| GET | `/archive` | 原本の一覧 |
-| GET | `/archive/{year}/{file}` | 原本のダウンロード |
+| GET | `/archive` | 原本の一覧（既定で無効） |
+| GET | `/archive/{year}/{file}` | 原本のダウンロード（既定で無効） |
 | POST | `/api/v1/admin/ingest` | 手動取り込み（Bearer 認証） |
+
+## 原本配信は既定でオフです
+
+`/archive/*` は環境変数 `ARCHIVE_PUBLIC` が `"true"` のときだけ有効になります。無効時はルート自体を生やさないので `404` を返します。
+
+原本は R2 に保管し続けますが、公開すると大量ダウンロードが R2 の課金につながりうるため、既定では配信しません。有効化する場合は `wrangler.toml` の `ARCHIVE_PUBLIC` を `"true"` にしたうえで、`/archive/*` にレートリミットをかけてください。現在の設定は `/api/v1/healthz` の `checks.archivePublic` で確認できます。
 
 **期間ビュー 4 種は同じ形を返します。** `scope` と `range` だけが違うので、クライアントは 1 つのレンダラで扱えます。
 
@@ -73,4 +79,4 @@ pnpm --filter @mizunashi/api test
 
 ## デプロイ前に必要なこと
 
-`wrangler.toml` の KV namespace ID がプレースホルダのままです。R2 バケットと KV namespace を作成し、ID を埋めてください。`ADMIN_TOKEN` は `wrangler secret put` で設定します（値をファイルに書かないでください）。
+R2 バケット `mizunashi-archive` と KV namespace は作成済みで、ID は `wrangler.toml` に入っています。`ADMIN_TOKEN` だけ `wrangler secret put ADMIN_TOKEN` で設定してください（値をファイルに書かないでください）。

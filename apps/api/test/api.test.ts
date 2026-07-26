@@ -104,6 +104,7 @@ beforeEach(async () => {
     now: () => NOW,
     pageUrl: PAGE_URL,
     baseUrl: BASE_URL,
+    archivePublic: false,
   };
   app = createApp(deps);
 });
@@ -255,7 +256,16 @@ describe('エラー', () => {
     expect(res.status).toBe(404);
     const body = (await res.json()) as ProblemDetails;
     expect(body.type).toContain('year-not-available');
-    expect(body.detail).toContain('/archive');
+    expect(body.detail).toContain('2026');
+  });
+
+  it('原本配信が無効なら /archive は 404', async () => {
+    for (const path of ['/archive', '/archive/2026/mizunashi2026.xlsx']) {
+      const res = await get(path);
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as ProblemDetails;
+      expect(body.type).toContain('not-found');
+    }
   });
 
   it('期間が長すぎる場合は 400', async () => {

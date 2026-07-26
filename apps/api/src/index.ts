@@ -15,6 +15,7 @@ function depsFrom(env: Env): Deps {
     now: () => new Date(),
     pageUrl: env.PAGE_URL,
     baseUrl: env.PUBLIC_BASE_URL,
+    archivePublic: env.ARCHIVE_PUBLIC === 'true',
   };
 }
 

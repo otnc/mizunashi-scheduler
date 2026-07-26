@@ -58,6 +58,7 @@ beforeEach(async () => {
     now: () => NOW,
     pageUrl: PAGE_URL,
     baseUrl: 'https://mizunashi.example.test',
+    archivePublic: true,
   };
   admin = { ...deps, http: noopHttp, adminToken: TOKEN };
   app = createApp(deps, admin);

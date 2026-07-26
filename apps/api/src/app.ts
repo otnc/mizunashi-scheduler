@@ -79,7 +79,8 @@ export function createApp(deps: Deps, admin?: AdminDeps): Hono {
 
   // 管理系は CORS を許可しない。認証を通す経路をブラウザから叩かせる必要がない
   if (admin != null) app.route('/', adminRoutes(admin));
-  app.route('/', archiveRoutes(deps));
+  // 原本配信は既定でオフ。無効時は経路自体を生やさず 404 にする
+  if (deps.archivePublic) app.route('/', archiveRoutes(deps));
 
   app.onError((err, c) => {
     const now = deps.now();
@@ -118,6 +119,7 @@ export function createApp(deps: Deps, admin?: AdminDeps): Hono {
         currentYearData: hasCurrent ? 'ok' : 'missing',
         activeYears: data.years.map((y) => y.year),
         lastRunAt: data.index.lastRun?.at ?? null,
+        archivePublic: deps.archivePublic,
       },
     });
   });
@@ -266,10 +268,12 @@ export function createApp(deps: Deps, admin?: AdminDeps): Hono {
     }
     const data = await loadData(deps);
     if (!data.years.some((y) => y.year === year)) {
-      // 提供対象は今年と来年のみ。原本は /archive から取得できる（§3.4）
+      // 提供対象は今年と来年のみ（§3.4）
+      const served = data.years.map((y) => String(y.year)).join(', ');
+      const hint = deps.archivePublic ? ' 原本は /archive から取得できます。' : '';
       throw new ApiProblem(
         'year-not-available',
-        `${String(year)} 年は提供対象外です。提供しているのは ${data.years.map((y) => String(y.year)).join(', ')} です。原本は /archive から取得できます。`,
+        `${String(year)} 年は提供対象外です。提供しているのは ${served} です。${hint}`,
       );
     }
 
@@ -374,8 +378,9 @@ export function createApp(deps: Deps, admin?: AdminDeps): Hono {
         nextYearPublished: data.years.some((y) => y.year > current),
         coverage,
         lastCheckedAt: data.index.lastRun?.at ?? null,
-        retentionPolicy:
-          '今年と来年の時間表のみ提供します。原本ファイルは /archive で永続的に公開しています。',
+        retentionPolicy: deps.archivePublic
+          ? '今年と来年の時間表のみ提供します。原本ファイルは /archive で永続的に公開しています。'
+          : '今年と来年の時間表のみ提供します。原本ファイルは保管していますが公開していません。',
       },
       attribution: {
         source: '函館市公式ホームページ',

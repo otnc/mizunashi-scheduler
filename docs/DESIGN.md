@@ -496,7 +496,7 @@ graph TB
     end
 
     subgraph Users["利用者"]
-        BROWSER["ブラウザ<br/>mizunashi.example.com"]
+        BROWSER["ブラウザ<br/>mizunashi.otnc.dev"]
         CLIENT["外部クライアント<br/>API 利用者"]
     end
 
@@ -1829,7 +1829,7 @@ export const DaySchedule = z.object({
     "httpLastModified": "2026-07-22T05:12:26.000Z",
     "fetchedAt": "2026-07-26T17:15:04.001Z",
     "archiveKey": "raw/2026/mizunashi2026.6a60513a.xlsx",
-    "archiveUrl": "https://mizunashi.example.com/archive/2026/mizunashi2026.6a60513a.xlsx"
+    "archiveUrl": "https://mizunashi.otnc.dev/archive/2026/mizunashi2026.6a60513a.xlsx"
   },
   "notes": {
     "ja": ["入浴可能時間であっても，波の高い日は入浴できませんのでご注意ください。"],
@@ -2012,7 +2012,7 @@ function withStatus(s: ResolvedSession, t: number): ResolvedSession {
 
 ### 11.1 基本方針
 
-- ベース URL: `https://mizunashi.example.com/api/v1`
+- ベース URL: `https://mizunashi.otnc.dev/api/v1`
 - 認証不要（管理系エンドポイントを除く）
 - レスポンスは**エンベロープを持たない**素直な JSON オブジェクト
 - エラーは **RFC 9457 (`application/problem+json`)**
@@ -2098,8 +2098,8 @@ export interface ResponseMeta {
 | GET | `/api/v1/calendar.ics` | iCalendar フィード | 1h / CDN 6h |
 | GET | `/api/v1/openapi.json` | OpenAPI 3.1 定義 | 1d |
 | GET | `/api/v1/healthz` | ヘルスチェック | no-store |
-| GET | `/archive` | アーカイブ済み原本の一覧（過去年含む） | 1h |
-| GET | `/archive/{year}/{filename}` | アーカイブ済み原本のダウンロード | immutable / 1y |
+| GET | `/archive` | アーカイブ済み原本の一覧（過去年含む）**既定で無効** | 1h |
+| GET | `/archive/{year}/{filename}` | アーカイブ済み原本のダウンロード **既定で無効** | immutable / 1y |
 | POST | `/api/v1/admin/ingest` | 手動取り込みトリガ（Bearer 認証） | no-store |
 
 #### 期間ビュー 4 種の共通仕様
@@ -2380,7 +2380,7 @@ GET /api/v1/years/current
 ```
 
 - 365/366 日分の `DaySchedule` を返す（gzip 後 約 7KB）
-- **提供対象は今年と来年のみ**（[§3.4](#34-データ保持方針)）。それ以外の年は `404` + `type: "year-not-available"` を返し、`detail` に「原本は /archive からダウンロードできる」旨とリンクを含める
+- **提供対象は今年と来年のみ**（[§3.4](#34-データ保持方針)）。それ以外の年は `404` + `type: "year-not-available"` を返し、原本配信が有効なときに限り、`detail` に `/archive` への案内を含める
 - `navigation.next` は来年データがある場合のみ非 `null` → **フロントの年切替 UI の表示可否判定にそのまま使える**（FR-10）
 
 #### `GET /api/v1/years` — 提供中の年の一覧
@@ -2441,7 +2441,7 @@ GET /api/v1/calendar.ics?year=2026&alarm=30&lang=ja
     "coverage": { "from": "2026-01-01", "to": "2026-12-31" },
     "lastCheckedAt": "2026-07-26T17:15:04Z",
     "nextCheckAt": "2026-07-27T17:15:00Z",
-    "retentionPolicy": "今年と来年の時間表のみ提供します。原本ファイルは /archive で永続的に公開しています。",
+    "retentionPolicy": "今年と来年の時間表のみ提供します。原本ファイルは保管していますが公開していません。",
     "years": { "2026": { "revision": 1, "fetchedAt": "...", "sha256": "...", "archiveUrl": "..." } },
     "archivedOnly": [{ "year": 2025, "archiveUrl": "/archive/2025/mizunashi2025.a1b2c3d4.xlsx" }]
   },
@@ -2503,7 +2503,7 @@ await caches.default.delete(new Request(`https://${host}/api/v1/years/${year}`))
 
 ```json
 {
-  "type": "https://mizunashi.example.com/errors/invalid-parameter",
+  "type": "https://mizunashi.otnc.dev/errors/invalid-parameter",
   "title": "Invalid parameter",
   "status": 400,
   "detail": "`to` must be within 400 days of `from`.",
@@ -2529,7 +2529,7 @@ await caches.default.delete(new Request(`https://${host}/api/v1/years/${year}`))
 | 400 | `invalid-parameter` | パラメータ検証失敗 |
 | 401 | `unauthorized` | 管理エンドポイントの認証失敗 |
 | 404 | `not-found` | 存在しないパス |
-| 404 | `year-not-available` | 提供対象外の年（今年 / 来年以外）。`detail` に `/archive` の原本リンクを含める |
+| 404 | `year-not-available` | 提供対象外の年（今年 / 来年以外） |
 | 429 | `rate-limited` | レート制限超過（`Retry-After` 付与） |
 | 500 | `internal-error` | 予期しないエラー（詳細は返さずログに記録） |
 | 503 | `data-unavailable` | データ未初期化（初回デプロイ直後など） |
@@ -2748,7 +2748,7 @@ steps:
 | `/en/` | 英語版 |
 | `/calendar/` | カレンダー専用ページ（月間カレンダーを大きく表示、年月切替） |
 | `/about` | このサイトについて・出典・免責・データ保持方針 |
-| `/archive` | アーカイブ済み原本の一覧とダウンロード（**過去年も含む**） |
+| `/archive` | アーカイブ済み原本の一覧とダウンロード（**過去年も含む**）。既定で無効 |
 | `/api-docs` | API ドキュメント（Scalar / Stoplight を静的埋め込み） |
 
 > 年 / 月は URL パスではなく**クエリパラメータ + History API** で表現する（`/calendar/?y=2027&m=3`）。理由: 静的サイトなので、公開年が増えるたびにビルド対象ページが増える構成を避けたい。また来年データの公開は実行時に判明するため、ビルド時に年ページを列挙できない。
@@ -3295,7 +3295,7 @@ shadcn/ui の `new-york` スタイルを土台に、**「海と温泉」のア�
 | R2 Bucket | `mizunashi-archive` | 原本 + 派生 JSON + スナップショット |
 | KV Namespace | `MIZUNASHI_KV` | ホットキャッシュ |
 | Zone | `example.com` | 独自ドメイン |
-| Custom Domain | `mizunashi.example.com` | Worker にルーティング |
+| Custom Domain | `mizunashi.otnc.dev` | Worker にルーティング |
 
 ### 14.2 `wrangler.toml`
 
@@ -3325,8 +3325,8 @@ crons = ["15 17 * * *"]      # JST 02:15
 
 [vars]
 PAGE_URL = "https://www.city.hakodate.hokkaido.jp/docs/2014041800107/"
-PUBLIC_BASE_URL = "https://mizunashi.example.com"
-USER_AGENT = "mizunashi-scheduler/1.0 (+https://mizunashi.example.com/about)"
+PUBLIC_BASE_URL = "https://mizunashi.otnc.dev"
+USER_AGENT = "mizunashi-scheduler/1.0 (+https://mizunashi.otnc.dev/about)"
 
 [observability]
 enabled = true
@@ -3355,11 +3355,11 @@ export default {
 ### 14.4 独自ドメイン設定
 
 1. Cloudflare にゾーン `example.com` を追加（ネームサーバを Cloudflare に向ける）
-2. Workers & Pages → `mizunashi` → Settings → Domains & Routes → **Custom Domain** に `mizunashi.example.com` を追加
+2. Workers & Pages → `mizunashi` → Settings → Domains & Routes → **Custom Domain** に `mizunashi.otnc.dev` を追加
    - DNS レコードと TLS 証明書は Cloudflare が自動発行・自動更新
 3. SSL/TLS モード: **Full (strict)**
 4. Rules → **Always Use HTTPS** を有効化
-5. （任意）`api.mizunashi.example.com` も同 Worker の Custom Domain に追加し、API 専用ホストとして併用可能にする
+5. （任意）`api.mizunashi.otnc.dev` も同 Worker の Custom Domain に追加し、API 専用ホストとして併用可能にする
 
 **Cache Rules**
 
@@ -3389,8 +3389,8 @@ jobs:
       - pnpm --filter api exec wrangler deploy
       - name: Smoke test
         run: |
-          curl -fsS https://mizunashi.example.com/api/v1/healthz
-          curl -fsS https://mizunashi.example.com/api/v1/status | jq -e '.state'
+          curl -fsS https://mizunashi.otnc.dev/api/v1/healthz
+          curl -fsS https://mizunashi.otnc.dev/api/v1/status | jq -e '.state'
 ```
 
 - Secrets: `CLOUDFLARE_API_TOKEN`（Workers Scripts:Edit, R2:Edit, KV:Edit の最小権限）
@@ -3403,7 +3403,7 @@ jobs:
 | --- | --- | --- | --- |
 | local | `wrangler dev` | `localhost:8787` | `--local` の Miniflare 永続化 + fixture |
 | preview | `mizunashi-preview` | `*.workers.dev` | 本番 R2 の読み取り専用コピー |
-| production | `mizunashi` | `mizunashi.example.com` | 本番 |
+| production | `mizunashi` | `mizunashi.otnc.dev` | 本番 |
 
 ローカル開発では `packages/core/test/fixtures/mizunashi2026.xlsx`（コミット済みの実データ）を使い、外部通信なしで全パイプラインを実行できるようにする。
 
@@ -4346,7 +4346,7 @@ catalog:
 
 ### 18.1 公式サイトへの配慮
 
-- **User-Agent を明示**: `mizunashi-scheduler/1.0 (+https://mizunashi.example.com/about)` — 連絡先が辿れる形にする。
+- **User-Agent を明示**: `mizunashi-scheduler/1.0 (+https://mizunashi.otnc.dev/about)` — 連絡先が辿れる形にする。
 - **リクエスト頻度**: 通常期は 2 週間に 1 回（月 4〜6 リクエスト）。11〜1 月のみ日次。年間の総転送量は約 10MB。
 - **`robots.txt` の尊重**: 実装時に `https://www.city.hakodate.hokkaido.jp/robots.txt` を確認し、`/docs/` 配下が Disallow でないことを検証する（現時点では通常の公開ページであり問題ないと判断）。
 - **リトライ**: 指数バックオフ（1s → 4s → 16s）、最大 3 回。5xx 時のみリトライし、4xx はリトライしない。
@@ -4362,7 +4362,7 @@ catalog:
 > 最新かつ正確な情報は必ず公式サイトおよび函館市椴法華支所産業建設課（0138-86-2111）にてご確認ください。
 > 本サイトの情報に起因する損害について、運営者は責任を負いません。
 >
-> **提供範囲について**: 時間表は今年および来年（公開され次第）のみを提供しています。過去年の原本ファイルは [アーカイブ](/archive) からダウンロードできます。
+> **提供範囲について**: 時間表は今年および来年（公開され次第）のみを提供しています。過去年の原本ファイルは保管していますが、公開はしていません。
 
 **安全上の注意も明示する**: 海中の露天風呂であり、波・潮位・気温により危険が伴う。無理な入浴をしないよう促す一文を StatusHero の近くに配置する。
 
@@ -4500,10 +4500,10 @@ proxy_cache_path /var/cache/nginx/mizunashi levels=1:2 keys_zone=mizunashi:10m
 
 server {
   listen 443 ssl http2;
-  server_name mizunashi.example.com;
+  server_name mizunashi.otnc.dev;
 
-  ssl_certificate     /etc/letsencrypt/live/mizunashi.example.com/fullchain.pem;
-  ssl_certificate_key /etc/letsencrypt/live/mizunashi.example.com/privkey.pem;
+  ssl_certificate     /etc/letsencrypt/live/mizunashi.otnc.dev/fullchain.pem;
+  ssl_certificate_key /etc/letsencrypt/live/mizunashi.otnc.dev/privkey.pem;
 
   add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
   add_header X-Content-Type-Options nosniff always;
@@ -4782,6 +4782,16 @@ WantedBy=timers.target
 - **型のずれ対策**: `packages/schema` の Zod 定義を唯一の情報源とし、公開する型がそれと**型等価であることをコンパイル時にアサートする**。ずれた時点で `pnpm typecheck` が落ちる。生成器を入れないのは、依存を増やさず差分をレビュー可能に保つため。加えて契約テスト（実レスポンスを Zod で検証）で担保する。
 - **公開方式**: Trusted Publishing（OIDC）。**`NPM_TOKEN` を発行も保存もしない。** provenance が自動で付き、どのコミット由来かを検証できる。
 
+### ADR-023: 原本ファイルの配信は既定でオフにする
+
+- **状況**: 原本を永久保存する方針（[ADR-009](#adr-009-原本は永久保存し派生データは今年と来年だけ持つ)）と、それを `/archive` で公開する設計は別の判断である。R2 の無料枠は Class B 1000 万回/月と十分に大きいが、**Cloudflare には上限額での自動停止機能がない**。想定外のトラフィックが課金に直結しうる。
+- **決定**: `/archive/*` を環境変数 `ARCHIVE_PUBLIC` で切り替え可能にし、**既定を無効**とする。無効時はルート自体を登録せず、通常の `404` として扱う。
+- **理由**:
+  1. **保存と公開を分離する。** 原本の永久保存という目的は R2 に置いておくだけで達成される。公開はそこに乗る任意の機能であって、必須ではない。
+  2. **課金リスクの主因を断てる。** API と静的サイトは Workers の無料枠（10 万リクエスト/日）で頭打ちになり、超過しても課金ではなくエラーになる。一方 R2 の外部トラフィックは頭打ちしない。原本配信を止めれば、課金経路が実質的に閉じる。
+  3. **後から開ける判断は安い。** 公開して問題が出てから閉じるより、閉じた状態から必要に応じて開ける方が可逆性が高い。
+- **影響**: `year-not-available` の `detail`、`/api/v1/meta` の `retentionPolicy`、サイトのフッター文言は、フラグに応じて内容を変える。現在の設定は `/api/v1/healthz` の `checks.archivePublic` で確認できる。
+- **有効化する場合**: `ARCHIVE_PUBLIC = "true"` に加えて `/archive/*` への WAF レートリミットを併せて設定すること。フラグだけ立てるのは想定していない。
 
 ---
 

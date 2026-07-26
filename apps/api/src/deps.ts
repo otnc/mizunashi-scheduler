@@ -20,6 +20,11 @@ export interface Deps {
   now: () => Date;
   pageUrl: string;
   baseUrl: string;
+  /**
+   * 原本ファイルの公開。既定はオフ。
+   * 大量ダウンロードが R2 の課金につながりうるため、明示的に有効化したときだけ配信する。
+   */
+  archivePublic: boolean;
 }
 
 export interface LoadedData {
