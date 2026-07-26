@@ -2665,30 +2665,43 @@ export interface Received<T> {
 | ワークフロー | 対象 | トリガ |
 | --- | --- | --- |
 | `.github/workflows/ci.yml` | 全体 | PR / main への push |
-| `.github/workflows/release-types.yml` | `@mizunashi/api-types` | タグ `api-types-v*` |
-| `.github/workflows/release-client.yml` | `@mizunashi/api-client` | タグ `api-client-v*` |
+| `.github/workflows/release-types.yml` | `@mizunashi/api-types` | `workflow_dispatch`（`version` 入力） |
+| `.github/workflows/release-client.yml` | `@mizunashi/api-client` | `workflow_dispatch`（`version` 入力） |
+
+**バージョンはワークフロー自身が上げる。** タグを手で打ってから push するのではなく、**実行時に `version` 入力（semver bump か明示バージョン）を渡して手動起動**し、バージョンの上書き・公開・コミット・タグ・GitHub Release の作成までを 1 回の実行でやり切る（otnc/hono-feed の `release.yml` と同じ形）。「タグを打ち忘れて `package.json` とずれる」「タグは打ったが公開が失敗して不整合が残る」という 2 段階運用特有の事故が起きない。
 
 ```yaml
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'semver bump (patch/minor/major/prerelease) か明示バージョン'
+        required: true
+        default: patch
 permissions:
-  contents: read
+  contents: write            # バージョンのコミット・タグ・push・Release 作成
   id-token: write            # OIDC トークンの発行に必須
 steps:
   - run: pnpm install --frozen-lockfile
   - run: pnpm check                                     # 公開前に全検証
-  - run: <タグと package.json のバージョン一致を確認>
+  - run: npm version "${{ inputs.version }}" --no-git-tag-version   # packages/api-types で実行
   - run: pnpm --filter @mizunashi/api-types build
   - run: pnpm --filter @mizunashi/api-types pack --pack-destination "$RUNNER_TEMP"
   - run: npm publish "$RUNNER_TEMP"/*.tgz --provenance --access public
+  - run: git commit -am "release(api-types): api-types-vX.Y.Z" && git tag api-types-vX.Y.Z && git push origin HEAD --tags
+  - run: gh release create api-types-vX.Y.Z --generate-notes
 ```
 
 **`pnpm pack` してから `npm publish <tarball>` する理由。** モノレポの `workspace:^` 参照は npm CLI では解決できず、そのまま公開すると利用者がインストールできないパッケージになる。一方 Trusted Publishing の OIDC は npm CLI 側の機能である。`pnpm pack` は tarball 内の `package.json` で `workspace:^` を実際のバージョン（`^0.1.0`）へ書き換えるため、**その tarball を npm CLI で公開すれば両方の要件を満たせる。**
 
+**公開とコミット・タグの順序は公開を先にする。** `npm publish` してから `git commit` / `git tag` / `push` を行う。逆にすると、公開が失敗したときに「タグは存在するがバージョンは公開されていない」という余計な不整合が残る。公開さえ通れば、その後の commit/tag/push は機械的な後始末でしかない。
+
 | 項目 | 方針 |
 | --- | --- |
 | 認証 | **Trusted Publishing (OIDC)**。`NPM_TOKEN` を発行しない・保存しない |
-| 事前設定 | npm の各パッケージ設定で、リポジトリと**ワークフローファイル名**を登録する |
+| 事前設定 | npm の各パッケージ設定で、リポジトリと**ワークフローファイル名**を登録する（トリガが `workflow_dispatch` でも登録内容は変わらない） |
 | provenance | `--provenance`。npm 上で「どのコミットから作られたか」が検証可能になる |
-| バージョニング | `package.json` を手で上げ、`api-types-v1.2.3` 形式のタグを打つ。**ワークフローがタグと `package.json` の一致を検証**し、食い違えば公開しない |
+| バージョニング | `workflow_dispatch` の `version` 入力を `npm version` に渡し、`package.json` を CI 側で上げる。タグは `api-types-v1.2.3` 形式で CI が打つ |
 | アクセス | `--access public`（スコープ付きの既定は restricted のため明示が必要） |
 | CLI の制約 | Trusted Publishing には **npm CLI 11.5.1 以降**が要る。ワークフローで `npm install -g npm@latest` してから公開する |
 | 依存の順序 | `api-client` の公開時に、依存する `api-types` が**既に npm に存在するか** `npm view` で確認する。未公開のまま出すとインストール不能になる |
@@ -2701,7 +2714,7 @@ steps:
 
 - **コンパイル時の等価アサーション**: 公開する型と Zod 定義がずれた時点で `pnpm typecheck` が落ちる。
 - **契約テスト**: API の統合テストで、実レスポンスを `packages/schema` の Zod で検証する（[§16](#16-テスト戦略)）。Zod が通れば公開型とも一致する。
-- **タグとバージョンの一致検証**: リリースワークフローが `package.json` と食い違うタグでの公開を拒否する。
+- **バージョンの単一情報源**: タグはリリースワークフロー自身が `package.json` から作るので、両者がずれた状態はそもそも作れない。
 
 ---
 

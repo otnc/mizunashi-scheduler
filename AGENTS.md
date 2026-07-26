@@ -176,7 +176,7 @@ pnpm が未導入なら `npm i -g pnpm` か `corepack enable pnpm` のどちら�
 
 - **公開するのは API の契約面だけ。** `@mizunashi/schema` / `parser` / `core` は `private: true` を外さない。内部実装を破壊的変更の対象にしないため。
 - **`api-types` の型を変えたら `packages/schema` の Zod 定義も揃える。** 両者の等価性はコンパイル時に検証されるので、片方だけ変えると `pnpm typecheck` が落ちる。落ちたら型を合わせるのであって、アサーションを消して黙らせない。
-- **公開は `package.json` のバージョンを上げてタグを打つ。** タグは `api-types-v1.2.3` / `api-client-v1.2.3` 形式。ワークフローがタグと `package.json` の一致を検証する。
+- **公開は `release-types.yml` / `release-client.yml` を `workflow_dispatch` から実行する。** `version` 入力に semver bump（`patch` / `minor` / `major` / `prerelease`）か明示バージョンを指定する。バージョンの上書き・ビルド・公開・コミット・タグ・GitHub Release の作成までワークフローが行う。タグは `api-types-v1.2.3` / `api-client-v1.2.3` 形式。
 - **メジャーバージョンは API バージョンに追従する。** `1.x` ↔ `/api/v1`。API に破壊的変更を入れずにパッケージのメジャーを上げない。
 - **手元から `npm publish` しない。** 公開は GitHub Actions の Trusted Publishing (OIDC) からのみ行う。**`NPM_TOKEN` を発行も保存もしない。**
 - **`api-client` より先に `api-types` の該当バージョンを公開する。** 逆順に出すとインストールできないパッケージになる。ワークフローが `npm view` で確認する。

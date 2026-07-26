@@ -1,0 +1,20 @@
+name: 🚀 機能要望
+description: アイデア・改善提案
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提案ありがとうございます。
+
+  - type: textarea
+    attributes:
+      label: どんな機能を提案しますか？
+      description: 実現したいことを具体的に書いてください。
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: なぜ必要ですか？
+      description: 困っていること、解決したい課題があれば書いてください。

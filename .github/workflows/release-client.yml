@@ -3,12 +3,15 @@ name: Release @mizunashi/api-client
 # release-types.yml と同じ構成。Trusted Publishing の信頼先が
 # ワークフローファイル単位で登録されるため、パッケージごとに分けている。
 on:
-  push:
-    tags: ['api-client-v*']
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'バージョン: semver bump (patch/minor/major/prerelease) か明示バージョン（例 0.2.0）'
+        required: true
+        default: patch
 
 permissions:
-  contents: read
+  contents: write
   id-token: write
 
 jobs:
@@ -16,9 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      # packageManager を置かない方針（AGENTS.md §3）なので、ここで版を指示する。
-      # 上限を切らないという方針に合わせて latest を使う
       - uses: pnpm/action-setup@v4
         with:
           version: latest
@@ -37,14 +40,20 @@ jobs:
       - name: Verify
         run: pnpm check
 
-      - name: Verify tag matches package version
-        if: github.event_name == 'push'
+      - name: Bump version
+        id: bump
+        working-directory: packages/api-client
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#api-client-v}"
-          PKG_VERSION="$(node -p "require('./packages/api-client/package.json').version")"
-          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
-            echo "タグ ($TAG_VERSION) と package.json ($PKG_VERSION) のバージョンが一致しません" >&2
-            exit 1
+          OLD="$(node -p "require('./package.json').version")"
+          npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version >/dev/null
+          NEW="$(node -p "require('./package.json').version")"
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+          echo "tag=api-client-v${NEW}" >> "$GITHUB_OUTPUT"
+          if [ "$OLD" = "$NEW" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::バージョンは既に ${NEW} です。コミットは省略し、公開のみ行います"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
       # api-types に依存するため、先にビルドして型を解決できるようにする
@@ -69,3 +78,23 @@ jobs:
 
       - name: Publish
         run: npm publish "$RUNNER_TEMP"/mizunashi-api-client-*.tgz --provenance --access public
+
+      - name: Commit, tag and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ "${{ steps.bump.outputs.changed }}" = "true" ]; then
+            git commit -am "release(api-client): ${{ steps.bump.outputs.tag }}"
+          fi
+          if ! git rev-parse -q --verify "refs/tags/${{ steps.bump.outputs.tag }}" >/dev/null; then
+            git tag "${{ steps.bump.outputs.tag }}"
+          fi
+          git push origin HEAD "${{ steps.bump.outputs.tag }}"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ steps.bump.outputs.tag }}" \
+            --title "${{ steps.bump.outputs.tag }}" \
+            --generate-notes

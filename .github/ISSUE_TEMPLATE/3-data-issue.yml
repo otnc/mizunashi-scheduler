@@ -1,0 +1,31 @@
+name: 🌊 時間表データの誤り
+description: 表示されている入浴可能時間が原本（函館市公式サイト）と食い違っている
+labels: [data]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        時間表の解析ミスの可能性がある報告です。函館市の公式サイトで公開されている
+        時間表のフォーマットは年によって変わることがあり、パーサが誤って読み取る
+        ことがあります。
+
+  - type: input
+    attributes:
+      label: 対象の日付
+      placeholder: '2026-08-15'
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: サイト / API はどう表示していますか？
+      description: 見えている入浴可能時間、または API レスポンスを貼ってください。
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 公式サイトの原本ではどうなっていますか？
+      description: 可能であれば函館市公式サイトの該当箇所（画像やスクリーンショットも可）を教えてください。
+    validations:
+      required: true

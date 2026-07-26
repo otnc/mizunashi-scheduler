@@ -1,0 +1,44 @@
+name: 🐛 バグ報告
+description: 不具合の報告
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        報告ありがとうございます。できるだけ詳しい情報をお願いします。
+
+  - type: dropdown
+    attributes:
+      label: どこで発生しましたか？
+      options:
+        - サイト（mizunashi.otnc.dev）
+        - API（/api/v1/...）
+        - '@mizunashi/api-types'
+        - '@mizunashi/api-client'
+        - その他 / 不明
+    validations:
+      required: true
+
+  - type: input
+    attributes:
+      label: npm パッケージを使っている場合、バージョンを教えてください
+      placeholder: '@mizunashi/api-client@0.1.0'
+
+  - type: textarea
+    attributes:
+      label: 何が起きましたか？
+      description: 手順を再現できる形で書いてください。API のリクエスト（パスとクエリ）やコードがあれば含めてください。
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 期待していた動作は何ですか？
+
+  - type: textarea
+    attributes:
+      label: 実際はどうなりましたか？
+
+  - type: textarea
+    attributes:
+      label: 補足があれば
