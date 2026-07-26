@@ -14,6 +14,9 @@ export default tseslint.config(
       // tsconfig の include 外にあるため型情報付き lint の対象にできない
       'eslint.config.js',
       'scripts/**',
+      '**/astro.config.mjs',
+      // .astro は eslint-plugin-astro を入れるまで対象外（DESIGN.md §17.2）
+      '**/*.astro',
     ],
   },
 

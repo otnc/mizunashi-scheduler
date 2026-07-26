@@ -1,6 +1,16 @@
-import type { DaySchedule, YearSchedule } from '@mizunashi/schema';
-import type { ResolvedSession } from '@mizunashi/schema';
+import type { DaySchedule, ResolvedSession } from '@mizunashi/schema';
 import { addDays, jstInstant } from './jst.js';
+
+/**
+ * CalendarView に必要な最小限。YearSchedule はこれを構造的に満たす。
+ * API から取得した期間レスポンスからも組み立てられるようにするため、
+ * 全体ではなく部分集合で受ける。
+ */
+export interface CalendarSource {
+  year: number;
+  days: readonly DaySchedule[];
+  notes: { ja: readonly string[]; en: readonly string[] };
+}
 
 /**
  * 複数年をまたいで日付引きできるビュー。
@@ -10,9 +20,9 @@ import { addDays, jstInstant } from './jst.js';
 export class CalendarView {
   readonly #days = new Map<string, DaySchedule>();
   readonly #sessions: ResolvedSession[] = [];
-  readonly #years: YearSchedule[];
+  readonly #years: CalendarSource[];
 
-  constructor(years: readonly YearSchedule[]) {
+  constructor(years: readonly CalendarSource[]) {
     this.#years = [...years].sort((a, b) => a.year - b.year);
 
     for (const year of this.#years) {
@@ -46,7 +56,7 @@ export class CalendarView {
     this.#sessions.sort((a, b) => a.startAt.localeCompare(b.startAt));
   }
 
-  get years(): readonly YearSchedule[] {
+  get years(): readonly CalendarSource[] {
     return this.#years;
   }
 

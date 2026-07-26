@@ -1,0 +1,28 @@
+---
+import BaseLayout from '../layouts/BaseLayout.astro';
+import WaveWarning from '../components/astro/WaveWarning.astro';
+import SiteFooter from '../components/astro/SiteFooter.astro';
+import { ScheduleApp } from '../components/react/ScheduleApp';
+---
+
+<BaseLayout
+  title="水無海浜温泉 入浴可能時間"
+  description="函館市の水無海浜温泉に今入れるか、いつまで入れるか、次はいつから入れるかがわかります（非公式）。"
+>
+  <main class="mx-auto max-w-3xl px-4 py-8">
+    <header class="mb-6">
+      <h1 class="text-xl font-bold tracking-tight">水無海浜温泉 入浴可能時間</h1>
+      <p class="mt-1 text-sm text-muted-foreground">
+        北海道函館市・恵山岬。潮の干満で入浴できる時間が日ごとに変わります。
+      </p>
+    </header>
+
+    <ScheduleApp client:load />
+
+    <div class="mt-6">
+      <WaveWarning />
+    </div>
+
+    <SiteFooter />
+  </main>
+</BaseLayout>
