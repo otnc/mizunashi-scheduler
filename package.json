@@ -1,0 +1,32 @@
+{
+  "name": "mizunashi-scheduler",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "函館市 水無海浜温泉の入浴可能時間を機械可読化する Web API とサイト（非公式）",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=10"
+  },
+  "scripts": {
+    "lint": "eslint . --cache --max-warnings=0",
+    "lint:fix": "eslint . --cache --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "test": "pnpm -r test",
+    "check": "pnpm lint && pnpm format:check && pnpm typecheck && pnpm test && pnpm check:invariants",
+    "check:invariants": "node scripts/check-invariants.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "eslint-config-prettier": "catalog:",
+    "prettier": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vitest": "catalog:"
+  }
+}

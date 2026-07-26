@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.astro/
+.wrangler/
+pnpm-lock.yaml
+worker-configuration.d.ts
+
+# 実データの原本。整形すると別物になる（AGENTS.md §5）
+packages/core/test/fixtures/
+
+# Markdown は自動整形しない（DESIGN.md §17.2）
+*.md
